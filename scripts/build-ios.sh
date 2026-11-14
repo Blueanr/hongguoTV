@@ -15,6 +15,9 @@ xcodebuild -project ios-native/HongguoPad.xcodeproj -scheme HongguoPad \
   -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
   -derivedDataPath build/ios CODE_SIGNING_ALLOWED=NO build
 APP="$ROOT/build/ios/Build/Products/Release-iphoneos/HongguoPad.app"
+for resource in signer.js Assets.car LICENSE.txt NOTICE.txt Buffer-LICENSE.txt Kotlin-NOTICE.txt; do
+  test -s "$APP/$resource" || { echo "Missing app resource: $resource" >&2; exit 1; }
+done
 # TrollStore replaces this ad-hoc signature at install time; no private entitlements are requested.
 codesign --force --sign - --timestamp=none --entitlements ios-native/TrollStore.entitlements "$APP"
 codesign --verify --deep --strict "$APP"
