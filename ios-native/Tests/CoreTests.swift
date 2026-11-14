@@ -26,6 +26,22 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try MP4Index.uint(Data(repeating: 255,count: 8),0,8))
         XCTAssertThrowsError(try MP4Index.box(Data(hex:"0000000466747970")!,0,8))
     }
+    func testRandomAccessDecryptionAndHeaderReplacement() throws {
+        let key = Data(hex: "2b7e151628aed2a6abf7158809cf4f3c")!,iv = Data(hex: "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")!
+        let plain = Data((0..<64).map(UInt8.init))
+        let encrypted = try Crypto.aes(plain,key: key,iv: iv,ctr: true)
+        let index = MP4Index(header: Data("HEAD".utf8),samples: [
+            .init(start: 8,end: 33,iv: iv,encryptedOffset: 0),
+            .init(start: 37,end: 76,iv: iv,encryptedOffset: 25)
+        ])
+        let wire = Data(repeating: 0,count: 8) + encrypted.prefix(25) + Data([9,8,7,6]) + encrypted.dropFirst(25)
+        let expected = Data("HEAD".utf8) + Data(repeating: 0,count: 4) + plain.prefix(25) + Data([9,8,7,6]) + plain.dropFirst(25)
+        XCTAssertEqual(try index.decrypt(wire,start: 0,key: key),expected)
+        for start in [0,2,8,11,29,32,34,37,40,60] {
+            let end = min(start + 13,wire.count)
+            XCTAssertEqual(try index.decrypt(Data(wire[start..<end]),start: start,key: key),Data(expected[start..<end]),"offset \(start)")
+        }
+    }
     func testRenditionKeepsGoodRowsAndRejectsUnknownEncryption() {
         let model: JSON = ["video_list":[
             ["main_url":"https://example.org/video.mp4", "quality_desc":"720p", "codec_type":"h264"],

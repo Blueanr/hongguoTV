@@ -9,6 +9,7 @@ struct MP4Index {
     struct Sample { let start: Int; let end: Int; let iv: Data; let encryptedOffset: Int }
     let header: Data
     let samples: [Sample]
+    init(header: Data,samples: [Sample]) { self.header = header; self.samples = samples.sorted { $0.start < $1.start } }
     static func uint(_ data: Data, _ at: Int, _ width: Int = 4) throws -> Int {
         guard at >= 0, width > 0, at <= data.count - width else { throw HGError.message("视频索引截断") }
         var value: UInt64 = 0
@@ -110,9 +111,12 @@ struct MP4Index {
                     search -= 1
                 }
                 patched.replaceSubrange((sinf.start + 4)..<(sinf.start + 8), with: Data("free".utf8)); at = sinf.end
+                patched.replaceSubrange(sinf.body..<sinf.end,with: Data(repeating: 0,count: sinf.end - sinf.body))
             }
         }
-        header = patched; samples = result.sorted { $0.start < $1.start }
+        let sorted = result.sorted { $0.start < $1.start }
+        guard !sorted.isEmpty, !zip(sorted,sorted.dropFirst()).contains(where: { $0.end > $1.start }) else { throw HGError.message("视频加密索引不可用或样本重叠") }
+        header = patched; samples = sorted
     }
     func decrypt(_ data: Data, start: Int, key: Data?) throws -> Data {
         var out = data; let end = start + data.count

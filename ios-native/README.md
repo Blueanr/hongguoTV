@@ -56,4 +56,6 @@ npm --prefix ios-native/tooling run build
 npm --prefix ios-native/tooling test
 ```
 
+可选联网诊断：`node ios-native/tooling/probe.mjs`。它检查片单、详情、匿名注册、单集及备用播放模型和 CDN MP4 分段，只输出阶段和数量。2026-11-14 本地采样曾出现单集空响应，后续复测成功取得 5 档资源；该结果不是 iPad 实机播放验收。
+
 协议实现来源于本仓库 `kotlin-tv/core`，签名算术构建时复用 `server/vendor/hongguo.cjs` 中固定来源的算法片段；版权与许可证见 [NOTICE](NOTICE.md)。

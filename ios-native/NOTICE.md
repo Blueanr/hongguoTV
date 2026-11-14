@@ -3,6 +3,7 @@
 本目录代码采用 GPL-3.0-only，许可证全文见仓库根目录 `LICENSE`。
 
 - 内容协议、匿名设备注册、账号端点、媒体索引和解码移植自本仓库 `kotlin-tv/core`；其第三方来源见 `kotlin-tv/NOTICE.md`。
+- 单集播放签名移植自 `PlayerSignature.kt`，按 `player-signing.json` 中独立 Go 参考向量逐字节校验；Argus/Simon 的 MIT 声明随应用内 `Kotlin-NOTICE.txt` 分发。
 - 签名组件构建时提取 `server/vendor/hongguo.cjs` 的固定算法片段。该文件来源于 drpys，固定版本及原版权信息见 `server/vendor/NOTICE.md` 与 `server/vendor/LICENSE.drpys`。构建脚本仅调整会话 nonce／启动时间，并使用当前 Kotlin 版请求形态。
 - 打包依赖 `buffer` 6.0.3：MIT，版权 Feross Aboukhadijeh 及贡献者。其许可证随构建安装的 `node_modules/buffer/LICENSE` 提供，并复制进应用资源。
 - `esbuild` 为构建工具（MIT），不作为设备运行时嵌入。
