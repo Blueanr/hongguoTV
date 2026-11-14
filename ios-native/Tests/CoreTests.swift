@@ -3,6 +3,35 @@ import XCTest
 @testable import HongguoPad
 
 final class CoreTests: XCTestCase {
+    func testCustomSpeedInputValidation() {
+        XCTAssertEqual(PlaybackSpeed.parse(" 1.25 "),1.25)
+        XCTAssertEqual(PlaybackSpeed.parse("1,75"),1.75)
+        XCTAssertEqual(PlaybackSpeed.parse("0.25"),0.25)
+        XCTAssertEqual(PlaybackSpeed.parse("4"),4)
+        XCTAssertEqual(PlaybackSpeed.parse("1.376"),1.38)
+        for text in ["", "abc", "NaN", "inf", "0", "-1", "0.24", "4.01"] {
+            XCTAssertNil(PlaybackSpeed.parse(text),text)
+        }
+        XCTAssertNotEqual(PlaybackSpeed.label(1.25),PlaybackSpeed.label(1.2))
+    }
+    @MainActor func testSpeedPersistsWithoutResumingPausedPlayer() throws {
+        let suite = "PlaybackTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let detail = Detail(series: Series(id: "1",title: "Test"),episodes: [])
+        let library = Library()
+        let model = PlayerModel(detail: detail,index: 0,position: 0,library: library,defaults: defaults)
+        XCTAssertEqual(model.rate,1)
+        model.setRate(1.75)
+        XCTAssertEqual(model.player.rate,0,"Changing speed must preserve pause")
+        model.setRate(.nan); model.setRate(0); model.setRate(5)
+        XCTAssertEqual(model.rate,1.75)
+        let reopened = PlayerModel(detail: detail,index: 0,position: 0,library: library,defaults: defaults)
+        XCTAssertEqual(reopened.rate,1.75)
+        defaults.set(99,forKey: PlaybackSpeed.key)
+        let repaired = PlayerModel(detail: detail,index: 0,position: 0,library: library,defaults: defaults)
+        XCTAssertEqual(repaired.rate,1)
+    }
     func testRouterIgnoresBracesInsideStrings() throws {
         let html = #"<script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"title":"a } [ \" b"}}}; bad();</script>"#
         XCTAssertEqual(try RouterParser.extract(html).object("detail_page").text("title"), "a } [ \" b")

@@ -19,15 +19,30 @@ import AVKit
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var statusObserver: NSKeyValueObservation?
+    private var rateObserver: NSKeyValueObservation?
+    private let defaults: UserDefaults
     private var generation = UUID()
     private var currentEpisode: Int?
     private var initialPosition: Double
     private var lastUpload = Date.distantPast
     private var uploading = false
-    init(detail: Detail,index: Int,position: Double,library: Library) {
+    init(detail: Detail,index: Int,position: Double,library: Library,defaults: UserDefaults = .standard) {
         self.detail = detail; self.index = index; self.initialPosition = position; self.library = library
+        self.defaults = defaults
+        let savedRate = defaults.float(forKey: PlaybackSpeed.key)
+        rate = PlaybackSpeed.valid(savedRate) ? savedRate : 1
+        if #available(iOS 16.0, *) { player.defaultRate = rate }
+        // iOS 15's AVKit play button resumes at 1x. Reapply the preference only
+        // while playing, never turn a paused player back on.
+        rateObserver = player.observe(\.rate,options: [.new]) { [weak self] _,_ in
+            Task { @MainActor in
+                guard let self = self, self.player.rate > 0, self.player.rate != self.rate else { return }
+                self.player.rate = self.rate
+            }
+        }
     }
     func start() {
+        guard timeObserver == nil else { return }
         try? AVAudioSession.sharedInstance().setCategory(.playback,mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 5,preferredTimescale: 600),queue: .main) { [weak self] _ in
@@ -88,7 +103,13 @@ import AVKit
         }
     }
     func setQuality(_ value: Int) { quality = value; load(index,position: max(0,player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0)) }
-    func setRate(_ value: Float) { rate = value; if player.rate != 0 { player.rate = value } }
+    func setRate(_ value: Float) {
+        guard PlaybackSpeed.valid(value) else { return }
+        rate = (value * 100).rounded() / 100
+        defaults.set(rate,forKey: PlaybackSpeed.key)
+        if #available(iOS 16.0, *) { player.defaultRate = rate }
+        if player.rate > 0 { player.rate = rate }
+    }
     func setSleep(_ minutes: Int) {
         sleepTask?.cancel(); sleepMinutes = minutes
         guard minutes > 0 else { return }
@@ -118,9 +139,10 @@ struct NativePlayer: UIViewControllerRepresentable {
 }
 
 struct PlaybackScreen: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @StateObject var model: PlayerModel
+    let onBack: () -> Void
+    @State private var customSpeed = false
     var body: some View {
         NavigationView {
             GeometryReader { geo in
@@ -152,11 +174,15 @@ struct PlaybackScreen: View {
             }
             .navigationTitle(model.detail.series.title).navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(action: onBack) { Label("返回",systemImage: "chevron.left") }
+                        .accessibilityHint("也可从屏幕左边缘向右滑返回剧集详情")
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Menu("倍速 · \(String(format: "%.2g", model.rate))×") {
-                            ForEach([Float(0.75),1,1.25,1.5,2],id: \.self) { rate in Button("\(String(format: "%.2g",rate))×") { model.setRate(rate) } }
+                        Menu("倍速 · \(PlaybackSpeed.label(model.rate))") {
+                            ForEach(PlaybackSpeed.presets,id: \.self) { rate in Button(PlaybackSpeed.label(rate)) { model.setRate(rate) } }
+                            Button("自定义…") { customSpeed = true }
                         }
                         Menu("清晰度 · \(model.quality)P") { ForEach(model.qualities,id: \.self) { q in Button("\(q)P") { model.setQuality(q) } } }
                         Menu("定时停止\(model.sleepMinutes > 0 ? " · \(model.sleepMinutes)分钟" : "")") {
@@ -166,6 +192,7 @@ struct PlaybackScreen: View {
                 }
             }
         }.navigationViewStyle(.stack)
+            .sheet(isPresented: $customSpeed) { CustomSpeedScreen(rate: model.rate,apply: model.setRate) }
             .onAppear { model.start() }.onDisappear { model.stop() }
             .onChange(of: phase) { if $0 != .active { model.save() } }
     }

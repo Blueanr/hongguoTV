@@ -169,7 +169,7 @@ struct DetailScreen: View {
                 }
             }
             .fullScreenCover(item: $playback) { selection in
-                PlaybackScreen(model: PlayerModel(detail: selection.detail,index: selection.index,position: selection.position,library: library))
+                PlaybackContainer(model: PlayerModel(detail: selection.detail,index: selection.index,position: selection.position,library: library),onBack: { playback = nil })
             }
     }
     private func resumeLabel(_ detail: Detail) -> String {
