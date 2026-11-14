@@ -36,3 +36,9 @@ keystore.properties
 .externalNativeBuild/
 /ios/Pods/
 /ios/build/
+/ios-native/HongguoPad.xcodeproj/
+/ios-native/Resources/signer.js
+/ios-native/Resources/Assets.xcassets/
+*.ipa
+*.xcarchive/
+*.xcresult/
