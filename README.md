@@ -4,7 +4,9 @@
 
 # 红果 TV
 
-非官方红果短剧电视客户端。Kotlin 原生 APK，安装后联网使用，仅提供 APK 安装包。
+非官方红果短剧电视客户端。Android 主线为 Kotlin 原生 APK，安装后联网使用。
+
+新增 [iOS / iPadOS 15 原生移植](ios-native/README.md)，通过 GitHub Actions 构建供 TrollStore 安装的 IPA；已实现范围与主线功能差异见移植说明。
 
 ## 免责声明
 

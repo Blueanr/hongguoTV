@@ -104,7 +104,12 @@ struct BrowseScreen: View {
 
 struct DetailScreen: View {
     let series: Series
+    var cloudResume: WatchProgress? = nil
     @EnvironmentObject private var library: Library
+    @ObservedObject private var account = Account.shared
+    @State private var cloudFavorite = false
+    @State private var accountBusy = false
+    @State private var accountError: String?
     @State private var detail: Detail?
     @State private var error: String?
     @State private var retry = 0
@@ -119,14 +124,28 @@ struct DetailScreen: View {
                         Text(series.title).font(.title2.bold())
                         Text((detail?.series ?? series).tags).foregroundColor(.secondary)
                         Button { library.toggle(detail?.series ?? series) } label: { Label(library.favorite(series) ? "已收藏" : "收藏",systemImage: library.favorite(series) ? "heart.fill" : "heart") }.buttonStyle(.bordered)
+                        if account.loggedIn {
+                            Button(cloudFavorite ? "取消账号收藏" : "加入账号收藏") {
+                                accountBusy = true; accountError = nil
+                                Task {
+                                    do { try await account.setFavorite(series,add: !cloudFavorite); cloudFavorite.toggle() }
+                                    catch { accountError = error.localizedDescription }
+                                    accountBusy = false
+                                }
+                            }.disabled(accountBusy).buttonStyle(.bordered)
+                        }
                         if let detail = detail {
                             Button(resumeLabel(detail)) { resume(detail) }.buttonStyle(.borderedProminent)
                         }
                     }
                 }
                 Text((detail?.series ?? series).summary).foregroundColor(.secondary)
+                if let accountError = accountError { Text(accountError).foregroundColor(.orange) }
                 if let error = error { Text(error).foregroundColor(.red); Button("重试") { retry += 1 } }
                 else if let detail = detail {
+                    if let episode = detail.episodes.first {
+                        NavigationLink("查看首集评论与剧评",destination: CommentsScreen(series: series.id,episode: episode))
+                    }
                     Text("选集 · 共 \(detail.episodes.count) 集").font(.headline)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 65))],spacing: 12) {
                         ForEach(detail.episodes.indices,id: \.self) { index in
@@ -143,16 +162,22 @@ struct DetailScreen: View {
                 catch is CancellationError { }
                 catch { self.error = error.localizedDescription }
             }
+            .task(id: account.loggedIn) {
+                if account.loggedIn {
+                    do { cloudFavorite = try await account.favorites().contains { $0.id == series.id } }
+                    catch { accountError = error.localizedDescription }
+                }
+            }
             .fullScreenCover(item: $playback) { selection in
                 PlaybackScreen(model: PlayerModel(detail: selection.detail,index: selection.index,position: selection.position,library: library))
             }
     }
     private func resumeLabel(_ detail: Detail) -> String {
-        guard let progress = library.state.progress[series.id], let i = detail.episodes.firstIndex(of: progress.episodeID) else { return "开始播放" }
+        guard let progress = cloudResume ?? library.state.progress[series.id], let i = detail.episodes.firstIndex(of: progress.episodeID) else { return "开始播放" }
         return "继续观看 · 第 \(min(i + (progress.completed ? 2 : 1),detail.episodes.count)) 集"
     }
     private func resume(_ detail: Detail) {
-        if let progress = library.state.progress[series.id], let i = detail.episodes.firstIndex(of: progress.episodeID) {
+        if let progress = cloudResume ?? library.state.progress[series.id], let i = detail.episodes.firstIndex(of: progress.episodeID) {
             playback = PlaybackSelection(detail: detail,index: progress.completed && i + 1 < detail.episodes.count ? i + 1 : i,position: progress.completed ? 0 : progress.position)
         } else { playback = PlaybackSelection(detail: detail,index: 0,position: 0) }
     }
@@ -183,6 +208,10 @@ struct SettingsScreen: View {
     var body: some View {
         NavigationView {
             Form {
+                Section("账户") {
+                    NavigationLink("红果扫码登录与云端片单",destination: AccountScreen())
+                    Text("账号收藏、云端历史与本机记录分开保存。").font(.footnote).foregroundColor(.secondary)
+                }
                 Section("播放") {
                     Toggle("自动播放下一集",isOn: $autoNext)
                     Text("播放器支持横竖屏、系统全屏、AirPlay、画中画、倍速、清晰度和定时停止。").font(.footnote).foregroundColor(.secondary)

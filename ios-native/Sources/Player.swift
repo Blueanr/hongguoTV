@@ -22,6 +22,8 @@ import AVKit
     private var generation = UUID()
     private var currentEpisode: Int?
     private var initialPosition: Double
+    private var lastUpload = Date.distantPast
+    private var uploading = false
     init(detail: Detail,index: Int,position: Double,library: Library) {
         self.detail = detail; self.index = index; self.initialPosition = position; self.library = library
     }
@@ -78,7 +80,12 @@ import AVKit
         guard let currentEpisode = currentEpisode, let item = player.currentItem, item.status == .readyToPlay else { return }
         let position = player.currentTime().seconds, duration = item.duration.seconds
         guard position.isFinite, duration.isFinite else { return }
-        library.record(WatchProgress(series: detail.series,episodeID: detail.episodes[currentEpisode],index: currentEpisode,position: completed ? duration : position,duration: duration))
+        let progress = WatchProgress(series: detail.series,episodeID: detail.episodes[currentEpisode],index: currentEpisode,position: completed ? duration : position,duration: duration)
+        library.record(progress)
+        if Account.shared.loggedIn && !uploading && (completed || Date().timeIntervalSince(lastUpload) >= 30) {
+            lastUpload = Date(); uploading = true
+            Task { await Account.shared.upload(progress,count: detail.episodes.count); uploading = false }
+        }
     }
     func setQuality(_ value: Int) { quality = value; load(index,position: max(0,player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0)) }
     func setRate(_ value: Float) { rate = value; if player.rate != 0 { player.rate = value } }

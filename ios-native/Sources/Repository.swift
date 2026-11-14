@@ -95,7 +95,7 @@ final class Repository {
     func router(_ path: String) async throws -> JSON {
         guard let url = URL(string: Self.site + path) else { throw HGError.message("地址无效") }
         var request = URLRequest(url: url)
-        request.setValue(Self.appUA, forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
         let (data, _) = try await HTTP.shared.data(request)
         return try RouterParser.extract(String(decoding: data, as: UTF8.self))
     }
@@ -122,11 +122,13 @@ final class Repository {
         return CatalogPage(items: items, more: !items.isEmpty && page < (total > 0 ? min(total,100) : 100))
     }
     func ranking(page: Int) async throws -> CatalogPage {
-        // Rank pages use the same public loader when available; errors remain visible.
         let data = try await router("/rank/hot-drama?page=\(page)")
-        let section = data["rank_page"] as? JSON ?? data["rank_$"] as? JSON ?? [:]
-        guard let rows = section["rankList"] as? [JSON] ?? section["recommendList"] as? [JSON] else { throw HGError.message("榜单数据格式已变化") }
-        return CatalogPage(items: unique(rows.map(Series.init).filter(\.valid)), more: page < section.object("pagination").number("totalPages"))
+        let route = data.object("rank_hot-drama/page"), section = route.object("content")
+        guard route.text("rankKey") == "hongguo",route.number("pageNum") == page,section.flag("isSuccess"),let rows = section["rankList"] as? [JSON] else { throw HGError.message("榜单数据格式已变化") }
+        let items = rows.map { row in
+            Series(id: row.text("seriesId").isEmpty ? row.text("id") : row.text("seriesId"),title: row.text("title"),cover: row.text("cover"),summary: row.text("description"),badge: "第 \(row.number("rank")) 名 · \(row.text("heatText"))",tags: (row["tags"] as? [String] ?? []).prefix(5).joined(separator: " · "))
+        }
+        return CatalogPage(items: unique(items.filter(\.valid)),more: page < min(100,section.object("pagination").number("totalPages")))
     }
     func detail(_ id: String) async throws -> Detail {
         guard id.range(of: "^[0-9]{1,30}$", options: .regularExpression) != nil else { throw HGError.message("剧集编号无效") }
@@ -139,8 +141,8 @@ final class Repository {
     func streams(_ id: String) async throws -> [Rendition] {
         let profile = try await device.profile()
         var values = profile.values
-        for key in ["version_code", "manifest_version_code", "update_version_code", "pv_player"] { values[key] = "71532" }
-        values["version_name"] = "7.1.5.32"
+        for key in ["version_code", "manifest_version_code", "update_version_code", "pv_player"] { values[key] = "73932" }
+        values["version_name"] = "7.3.9.32"
         let extra = ["video_id":id,"video_id_type":"0","device_level":"1","need_all_video_definition":"1","need_mp4_align":"0","use_os_player":"0","video_platform":"1024","source":"0","from_video_id":""]
         var failure: Error = HGError.message("没有可播放的视频资源")
         for post in [false, true] {

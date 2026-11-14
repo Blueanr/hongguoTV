@@ -8,11 +8,12 @@ import SwiftUI
     @Published var error: String?
     private let file: URL
     private let writes = DispatchQueue(label: "com.hongguotv.library")
+    private var unreadable = false
     init() {
         file = FileManager.default.urls(for: .applicationSupportDirectory,in: .userDomainMask)[0].appendingPathComponent("library.json")
         if FileManager.default.fileExists(atPath: file.path) {
             do { state = try JSONDecoder().decode(State.self,from: Data(contentsOf: file)) }
-            catch { self.error = "本机记录读取失败，原文件已保留" }
+            catch { unreadable = true; self.error = "本机记录读取失败，原文件已保留" }
         }
     }
     func favorite(_ series: Series) -> Bool { state.favorites.contains { $0.id == series.id } }
@@ -34,7 +35,7 @@ import SwiftUI
     func clearHistory() { state.progress = [:]; save() }
     private func save() {
         // Do not overwrite an unreadable user library automatically.
-        guard error != "本机记录读取失败，原文件已保留" else { return }
+        guard !unreadable else { return }
         do {
             let data = try JSONEncoder().encode(state), file = file
             writes.async {

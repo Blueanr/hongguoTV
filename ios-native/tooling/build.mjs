@@ -14,6 +14,13 @@ const patched = arithmetic
   .replaceAll('3.467449188232422', '0').replaceAll('255.1754913330078', '0').replaceAll('42.17544174194336', '0');
 const shim = fs.readFileSync(new URL('runtime.js', import.meta.url), 'utf8');
 fs.mkdirSync(new URL('Resources', root), { recursive: true });
+for (const [source,name] of [
+  [new URL('../LICENSE',root),'LICENSE.txt'],
+  [new URL('NOTICE.md',root),'NOTICE.txt'],
+  [new URL('../server/vendor/NOTICE.md',root),'Vendor-NOTICE.txt'],
+  [new URL('../server/vendor/LICENSE.drpys',root),'Vendor-LICENSE.txt'],
+  [new URL('node_modules/buffer/LICENSE',import.meta.url),'Buffer-LICENSE.txt'],
+]) fs.copyFileSync(source,new URL('Resources/' + name,root));
 await build({
   stdin: { contents: `import { Buffer } from 'buffer';\n${shim}\n${constants}\n${patched}\nglobalThis.hgSign = sign;`, resolveDir: new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1') },
   bundle: true, format: 'iife', platform: 'neutral', target: 'safari15', tsconfigRaw: {},

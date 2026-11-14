@@ -39,6 +39,7 @@ keystore.properties
 /ios-native/HongguoPad.xcodeproj/
 /ios-native/Resources/signer.js
 /ios-native/Resources/Assets.xcassets/
+/ios-native/Resources/*.txt
 *.ipa
 *.xcarchive/
 *.xcresult/

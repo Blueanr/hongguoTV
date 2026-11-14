@@ -8,6 +8,7 @@ if [[ "$(uname -s)" != Darwin ]]; then
 fi
 npm --prefix ios-native/tooling ci --no-audit --no-fund
 npm --prefix ios-native/tooling run build
+npm --prefix ios-native/tooling test
 python3 scripts/ios-icons.py
 xcodegen generate --spec ios-native/project.yml
 xcodebuild -project ios-native/HongguoPad.xcodeproj -scheme HongguoPad \
