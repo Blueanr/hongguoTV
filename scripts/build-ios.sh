@@ -16,7 +16,7 @@ xcodebuild -project ios-native/HongguoPad.xcodeproj -scheme HongguoPad \
   -derivedDataPath build/ios CODE_SIGNING_ALLOWED=NO build
 APP="$ROOT/build/ios/Build/Products/Release-iphoneos/HongguoPad.app"
 # TrollStore replaces this ad-hoc signature at install time; no private entitlements are requested.
-codesign --force --sign - --timestamp=none "$APP"
+codesign --force --sign - --timestamp=none --entitlements ios-native/TrollStore.entitlements "$APP"
 codesign --verify --deep --strict "$APP"
 mkdir -p outputs/ios/Payload
 ditto "$APP" outputs/ios/Payload/HongguoPad.app
