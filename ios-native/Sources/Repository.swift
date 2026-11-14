@@ -140,6 +140,19 @@ final class Repository {
     }
     func streams(_ id: String) async throws -> [Rendition] {
         let profile = try await device.profile()
+        // Current Kotlin mainline starts with the single-video Argus/Ladon protocol.
+        do {
+            let request = try await signer.singleRequest(id: id,profile: profile.values)
+            let root = try await HTTP.shared.json(request)
+            guard root.number("code") == 0,root.number("Code") == 0 else { throw HGError.message("播放接口拒绝请求") }
+            let data = root.object("data")
+            var model = Self.jsonValue(data["video_model"])
+            if model.isEmpty,let decoded = Data(base64URL: data.text("video_model")),let text = String(data: decoded,encoding: .utf8) { model = Self.jsonValue(text) }
+            if model.isEmpty && data["video_list"] != nil { model = data }
+            let result = Self.renditions(model)
+            if !result.isEmpty { return result }
+        } catch is CancellationError { throw CancellationError() }
+        catch { /* Bounded fallback to the current Kotlin batch protocol. */ }
         var values = profile.values
         for key in ["version_code", "manifest_version_code", "update_version_code", "pv_player"] { values[key] = "73932" }
         values["version_name"] = "7.3.9.32"

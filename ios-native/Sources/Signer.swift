@@ -15,6 +15,11 @@ final class Signer {
         let nonce: @convention(block) () -> String = { Crypto.random(18).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_") }
         js.setObject(hash, forKeyedSubscript: "nativeHash" as NSString)
         js.setObject(nonce, forKeyedSubscript: "nativeNonce" as NSString)
+        let aes: @convention(block) (String,String,String) -> String = { input,key,iv in
+            guard let input = Data(base64Encoded: input),let key = Data(base64Encoded: key),let iv = Data(base64Encoded: iv),let out = try? Crypto.aes(input,key: key,iv: iv,encrypt: true,padding: true) else { return "" }
+            return out.base64EncodedString()
+        }
+        js.setObject(aes,forKeyedSubscript: "nativeAES" as NSString)
         js.evaluateScript(try String(contentsOf: url))
         guard js.exception == nil else { throw HGError.message("签名组件初始化失败") }
         context = js
@@ -38,5 +43,27 @@ final class Signer {
     }
     func sm3(_ text: String) throws -> String {
         try queue.sync { try runtime().objectForKeyedSubscript("hgSM3").call(withArguments: [text]).toString() }
+    }
+    func singleRequest(id: String,profile: [String:String]) async throws -> URLRequest {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                do {
+                    let allowed: Set<String> = ["ac","channel","aid","app_name","version_code","version_name","device_platform","os","ssmix","device_type","device_brand","language","os_api","os_version","manifest_version_code","resolution","dpi","update_version_code","device_id","iid"]
+                    var values = profile.filter { allowed.contains($0.key) }
+                    let now = Int64(Date().timeIntervalSince1970 * 1000)
+                    values.merge(["version_code":"73532","version_name":"7.3.5.32","manifest_version_code":"73532","update_version_code":"73532","_rticket":String(now)]) { _,n in n }
+                    let query = values.keys.sorted().map { Repository.encode($0) + "=" + Repository.encode(values[$0]!) }.joined(separator: "&")
+                    let payload: JSON = ["biz_param":["need_all_video_definition":true,"video_platform":3],"content_type":1,"video_id":id]
+                    let body = try JSONSerialization.data(withJSONObject: payload)
+                    let js = try self.runtime(); js.exception = nil
+                    guard let result = js.objectForKeyedSubscript("hgPlayerHeaders")?.call(withArguments: [query,body.base64EncodedString(),profile["device_id"] ?? "",now,Crypto.random(11).base64EncodedString()])?.toString(),js.exception == nil,
+                          let data = result.data(using: .utf8),let headers = try JSONSerialization.jsonObject(with: data) as? [String:String] else { throw HGError.message("播放签名失败") }
+                    var request = URLRequest(url: URL(string: "https://api5-normal-sinfonlineb.fqnovel.com/novel/player/video_model/v1/?" + query)!)
+                    request.httpMethod = "POST"; request.httpBody = body; request.httpShouldHandleCookies = false
+                    request.allHTTPHeaderFields = headers.merging(["User-Agent":"com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)","Content-Type":"application/json; charset=utf-8","Accept":"application/json","Sdk-Version":"2","X-XS-From-Web":"0"]) { _,n in n }
+                    continuation.resume(returning: request)
+                } catch { continuation.resume(throwing: error) }
+            }
+        }
     }
 }
