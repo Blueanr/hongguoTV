@@ -2,22 +2,9 @@
 // Native session transport for jackotom/hongguo-drama's SDK playback protocol.
 import Foundation
 
-private final class DramaRedirects: NSObject, URLSessionTaskDelegate {
-    func urlSession(_ session: URLSession,task: URLSessionTask,willPerformHTTPRedirection response: HTTPURLResponse,newRequest request: URLRequest,completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(nil) // Signed requests bind the original URL/body.
-    }
-}
-
 actor DramaPlayback {
     static let shared = DramaPlayback()
     private let signer = Signer()
-    private let redirects = DramaRedirects()
-    private lazy var session: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.httpShouldSetCookies = false; config.httpCookieStorage = nil
-        config.timeoutIntervalForRequest = 25; config.timeoutIntervalForResource = 45
-        return URLSession(configuration: config,delegate: redirects,delegateQueue: nil)
-    }()
     struct Identity: Codable { let params: [String:String]; let cookies: [String:String] }
     private var identity: Identity?
     private var ready = false
@@ -36,18 +23,7 @@ actor DramaPlayback {
         }
     }
     private func fetch(_ request: URLRequest,limit: Int) async throws -> (Data,HTTPURLResponse) {
-        try Task.checkCancellation()
-        let (stream,response) = try await session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else { throw HGError.message("播放服务响应无效") }
-        guard [200,206].contains(http.statusCode) else { throw HGError.message("播放服务请求失败（HTTP \(http.statusCode)）") }
-        guard response.expectedContentLength <= limit else { throw HGError.message("播放服务响应超出限制") }
-        var data = Data()
-        for try await byte in stream {
-            guard data.count < limit else { throw HGError.message("播放服务响应超出限制") }
-            data.append(byte)
-        }
-        try Task.checkCancellation()
-        return (data,http)
+        try await PlaybackTransport.data(request,limit: limit)
     }
     private func assets() async throws {
         if materialsLoaded { return }

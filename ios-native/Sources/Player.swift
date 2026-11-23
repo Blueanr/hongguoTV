@@ -75,7 +75,7 @@ import AVKit
                         if item.status == .failed {
                             self.loading = false
                             let reason = item.error.map { PlaybackFailure.describe($0) } ?? "未知错误"
-                            self.error = "播放器：\(reason)\n\(source.diagnostic)\n\(selected.quality)P · \(selected.codec) · iOS \(UIDevice.current.systemVersion) · build 6"
+                            self.error = "播放器：\(reason)\n\(source.diagnostic)\n\(selected.quality)P · \(selected.codec) · iOS \(UIDevice.current.systemVersion) · build 7"
                         }
                         if item.status == .readyToPlay { self.loading = false }
                     }
@@ -92,7 +92,7 @@ import AVKit
                 try Task.checkCancellation()
                 player.playImmediately(atRate: rate)
             } catch is CancellationError { }
-            catch { if generation == id { self.error = PlaybackFailure.describe(error) + "\niOS \(UIDevice.current.systemVersion) · build 6"; loading = false } }
+            catch { if generation == id { self.error = PlaybackFailure.describe(error) + "\niOS \(UIDevice.current.systemVersion) · build 7"; loading = false } }
         }
     }
     func save(completed: Bool = false) {

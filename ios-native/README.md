@@ -28,6 +28,8 @@
 
 ## 当前播放引擎：Drama SDI 会话（build 5）
 
+build 7：针对 iOS 15.0.2 实机在“匿名设备注册”阶段报 URL -1000，注册、会话和模型 POST 改用传统 URLSessionDataTask 委托传输，避开 AsyncBytes POST 路径；保持原始签名地址、请求头和请求体，保留取消、响应大小限制和禁止重定向。此为兼容性修复尝试，尚需该实机确认，不能仅凭新系统模拟器通过认定根因。
+
 参考 [jackotom/hongguo-drama](https://github.com/jackotom/hongguo-drama) 提交 `bc02370ff519adf7a94a20688c5538ac303f4ec7` 的 `scripts/sdk-playback` 重构：本机匿名注册 → `/sdi/get_token` 初始化（最多两次，202 → 200）→ 携带 token 的 v5 播放签名 → 精确分集模型 → 现有 AVPlayer/CENC 播放器。
 
 原桌面辅助程序使用 Python/Unicorn；本移植在 JavaScriptCore 中执行可移植算法，Swift 提供密码算法、压缩与网络，不依赖电脑或 NAS。摘要固定选择经原始 SDK 对照的分支 12，只在最终 query 的 `_rticket` 上进行有界搜索。会话包含 token、动态 Ladon、Gorgon、完整设备描述和注册 Cookie。设备资料保存在不参与备份的 Application Support/drama-playback；会话 token 只保留在内存。初始化串行化，切集可取消，失败后冷却 10 秒，下一次手动请求才重新初始化。
