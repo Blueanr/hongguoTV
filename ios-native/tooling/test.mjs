@@ -32,3 +32,4 @@ for(const row of fixtures) {
 }
 console.log(`Single-video signatures match all ${fixtures.length} independent Go reference fixtures.`);
 await import('./test-v5.mjs');
+await import('./test-drama.mjs');

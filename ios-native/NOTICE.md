@@ -2,6 +2,8 @@
 
 本目录代码采用 GPL-3.0-only，许可证全文见仓库根目录 `LICENSE`。
 
+- build 5 的 `DramaPlayback.swift` / `tooling/drama-session.js` 参考 `jackotom/hongguo-drama`（GPL-3.0-only），固定提交 `bc02370ff519adf7a94a20688c5538ac303f4ec7` 的 `scripts/sdk-playback/vendor/phone_account/phone_sdk_{bootstrap,exchange,materials}_v5.py`、`phone_playback_{request,signing}_v5.py` 与 `phone_account_device.py`。移植改动包括 Swift 原生传输、JavaScriptCore 算术、分支 12 有界选择、取消与缓存；未捆绑 Python/Unicorn 或原始 Android SDK。原始 SDK 资料由设备按哈希验证后下载，只用于配置/表读取。
+
 - 当前播放解析依赖 `beilunyang/openhongguo` Swift Package **0.4.0**（tag 提交 `cd27b9ef42a4aa06859d12e5a24ba7653fa64a2c`），Copyright 2026 beilunyang，Apache-2.0。Go 运行时及 gomobile 生成代码遵循 Go BSD 许可证。两份许可证保存在 `licenses/` 并随应用资源分发。SDK 的预编译 XCFramework 由上游 Package.swift 的 SHA-256 校验。
 
 - 内容协议、匿名设备注册、账号端点、媒体索引和解码移植自本仓库 `kotlin-tv/core`；其第三方来源见 `kotlin-tv/NOTICE.md`。

@@ -1,5 +1,7 @@
 # 0.16.13 APK / iOS 播放接口核对
 
+> build 5 正式入口进一步替换为 hongguo-drama 的 SDI 会话协议移植，包含 token 初始化；见 README 当前播放引擎章节。build 3/4 的空响应结论属于当时的旧路径。
+
 > 后续 build 4 已按用户要求将正式播放入口替换为 openhongguo Swift SDK 0.4.0。以下记录描述 build 3 的手工协议对齐与当时的联网结果，不代表当前 SDK 路径的测试结果。SDK 接入说明见 README。
 
 ## 参考身份（2026-11-23）

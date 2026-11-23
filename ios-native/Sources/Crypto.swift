@@ -11,11 +11,12 @@ enum HGError: LocalizedError {
 
 enum Crypto {
     static func hash(_ name: String, _ data: Data) -> Data {
-        let count = name == "md5" ? 16 : (name == "sha512" ? 64 : 32)
+        let count = name == "md5" ? 16 : (name == "sha512" ? 64 : (name == "sha1" ? 20 : 32))
         var out = [UInt8](repeating: 0, count: count)
         data.withUnsafeBytes { bytes in
             switch name {
             case "md5": _ = CC_MD5(bytes.baseAddress, CC_LONG(data.count), &out)
+            case "sha1": _ = CC_SHA1(bytes.baseAddress, CC_LONG(data.count), &out)
             case "sha512": _ = CC_SHA512(bytes.baseAddress, CC_LONG(data.count), &out)
             default: _ = CC_SHA256(bytes.baseAddress, CC_LONG(data.count), &out)
             }
@@ -27,11 +28,11 @@ enum Crypto {
         precondition(SecRandomCopyBytes(kSecRandomDefault, count, &bytes) == errSecSuccess)
         return Data(bytes)
     }
-    static func aes(_ data: Data, key: Data, iv: Data, encrypt: Bool = false, ctr: Bool = false, padding: Bool = false) throws -> Data {
+    static func aes(_ data: Data, key: Data, iv: Data, encrypt: Bool = false, ctr: Bool = false, padding: Bool = false, ecb: Bool = false) throws -> Data {
         guard key.count == 16, iv.count == 16 else { throw HGError.message("内容密钥格式异常") }
         var ref: CCCryptorRef?
         let status = key.withUnsafeBytes { k in iv.withUnsafeBytes { v in
-            CCCryptorCreateWithMode(CCOperation(encrypt ? kCCEncrypt : kCCDecrypt), CCMode(ctr ? kCCModeCTR : kCCModeCBC), CCAlgorithm(kCCAlgorithmAES), CCPadding(padding ? ccPKCS7Padding : ccNoPadding), v.baseAddress, k.baseAddress, key.count, nil, 0, 0, CCModeOptions(ctr ? kCCModeOptionCTR_BE : 0), &ref)
+            CCCryptorCreateWithMode(CCOperation(encrypt ? kCCEncrypt : kCCDecrypt), CCMode(ecb ? kCCModeECB : (ctr ? kCCModeCTR : kCCModeCBC)), CCAlgorithm(kCCAlgorithmAES), CCPadding(padding ? ccPKCS7Padding : ccNoPadding), v.baseAddress, k.baseAddress, key.count, nil, 0, 0, CCModeOptions(ctr ? kCCModeOptionCTR_BE : 0), &ref)
         }}
         guard status == kCCSuccess, let ref = ref else { throw HGError.message("无法初始化视频解码") }
         defer { CCCryptorRelease(ref) }
@@ -45,9 +46,9 @@ enum Crypto {
         guard update == kCCSuccess, finish == kCCSuccess else { throw HGError.message("视频数据解码失败") }
         return Data(out.prefix(written + final))
     }
-    static func gzip(_ data: Data) throws -> Data {
+    static func gzip(_ data: Data, window: Int32 = 31) throws -> Data {
         var stream = z_stream()
-        guard deflateInit2_(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else { throw HGError.message("压缩初始化失败") }
+        guard deflateInit2_(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, window, 8, Z_DEFAULT_STRATEGY, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else { throw HGError.message("压缩初始化失败") }
         defer { deflateEnd(&stream) }
         var out = [UInt8](repeating: 0, count: Int(deflateBound(&stream, uLong(data.count))))
         let code = data.withUnsafeBytes { bytes -> Int32 in
@@ -63,6 +64,22 @@ enum Crypto {
         return Data(out.prefix(Int(stream.total_out)))
     }
     static let salt = Data(hex: "4dd4c2e6b83162090e52b3c7a6733ba41cb2462b829ab58a196b39db57177524f49baf7f08e8d68d26a72e37c1a95a2f1f05a51892aef2949732b62a38aadd58")!
+    static func inflate(_ data: Data, window: Int32 = 15, limit: Int = 65536) throws -> Data {
+        var stream = z_stream()
+        guard inflateInit2_(&stream,window,ZLIB_VERSION,Int32(MemoryLayout<z_stream>.size)) == Z_OK else { throw HGError.message("解压初始化失败") }
+        defer { inflateEnd(&stream) }
+        var out = [UInt8](repeating: 0,count: limit + 1)
+        let code = data.withUnsafeBytes { bytes -> Int32 in
+            stream.next_in = UnsafeMutablePointer(mutating: bytes.bindMemory(to: UInt8.self).baseAddress)
+            stream.avail_in = uInt(data.count)
+            return out.withUnsafeMutableBytes { dest in
+                stream.next_out = dest.bindMemory(to: UInt8.self).baseAddress; stream.avail_out = uInt(dest.count)
+                return zlib.inflate(&stream,Z_FINISH)
+            }
+        }
+        guard code == Z_STREAM_END,stream.avail_in == 0,stream.total_out <= limit else { throw HGError.message("压缩数据不完整或超出限制") }
+        return Data(out.prefix(Int(stream.total_out)))
+    }
     static func encryptRegistration(_ data: Data) throws -> Data {
         let seed = random(32), derived = hash("sha512", hash("sha512", seed) + salt)
         return Data([0x74,0x63,5,0x10,0,0]) + seed + (try aes(hash("sha512", data) + data, key: Data(derived.prefix(16)), iv: Data(derived[16..<32]), encrypt: true, padding: true))

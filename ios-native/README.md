@@ -26,7 +26,17 @@
 
 最低部署版本和编译成功不等于 iOS 15 实机验收；账号接口、媒体服务和 CDN 的可用性仍受上游影响。
 
-## 当前播放引擎：openhongguo 0.4.0（build 4）
+## 当前播放引擎：Drama SDI 会话（build 5）
+
+参考 [jackotom/hongguo-drama](https://github.com/jackotom/hongguo-drama) 提交 `bc02370ff519adf7a94a20688c5538ac303f4ec7` 的 `scripts/sdk-playback` 重构：本机匿名注册 → `/sdi/get_token` 初始化（最多两次，202 → 200）→ 携带 token 的 v5 播放签名 → 精确分集模型 → 现有 AVPlayer/CENC 播放器。
+
+原桌面辅助程序使用 Python/Unicorn；本移植在 JavaScriptCore 中执行可移植算法，Swift 提供密码算法、压缩与网络，不依赖电脑或 NAS。摘要固定选择经原始 SDK 对照的分支 12，只在最终 query 的 `_rticket` 上进行有界搜索。会话包含 token、动态 Ladon、Gorgon、完整设备描述和注册 Cookie。设备资料保存在不参与备份的 Application Support/drama-playback；会话 token 只保留在内存。初始化串行化，切集可取消，失败后冷却 10 秒，下一次手动请求才重新初始化。
+
+首次使用从参考项目固定的官方 APK 地址分段下载约 5.4 MB SDK 初始化资料，校验压缩块和提取内容的 SHA-256 后缓存。只读取配置与协议表，不执行 Android `.so`。首次取源需要额外下载时间。
+
+2026-11-23 验证：参考 Python 实现与移植 JS 均完成 202 → 200 会话；移植 JS 第 1 集、第 54 集、末集均取得精确分集模型。独立 Python 合成向量验证 SDI 加密、响应解码与 Gorgon 通过。iOS 原生构建与联网结果待云端验证，模型成功不等同于 iPad 实机播放验收。
+
+## 历史：openhongguo 0.4.0（build 4）
 
 播放入口已替换为 [openhongguo](https://github.com/beilunyang/openhongguo) 原生 Swift SDK，固定版本 **0.4.0**。SDK 在本机处理匿名设备注册、持久化、签名、播放模型与内容密钥。设备被拒或播放空响应时，一次调用最多更换 2 台匿名设备，可重试网络请求最多尝试 3 次；应用设置 60 秒总等待上限，退出或切集会取消 SDK 请求。
 

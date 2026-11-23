@@ -20,6 +20,18 @@ final class Signer {
             return out.base64EncodedString()
         }
         js.setObject(aes,forKeyedSubscript: "nativeAES" as NSString)
+        let sessionAES: @convention(block) (String,String,String,Bool,Bool) -> String = { input,key,iv,encrypt,ecb in
+            guard let data = Data(base64Encoded: input),let key = Data(base64Encoded: key),let iv = Data(base64Encoded: iv),
+                  let output = try? Crypto.aes(data,key: key,iv: iv,encrypt: encrypt,padding: true,ecb: ecb) else { return "" }
+            return output.base64EncodedString()
+        }
+        let sessionZip: @convention(block) (String,Bool) -> String = { input,inflate in
+            guard let data = Data(base64Encoded: input),data.count <= 131072,
+                  let output = try? (inflate ? Crypto.inflate(data) : Crypto.gzip(data,window: 15)) else { return "" }
+            return output.base64EncodedString()
+        }
+        js.setObject(sessionAES,forKeyedSubscript: "nativeSessionAES" as NSString)
+        js.setObject(sessionZip,forKeyedSubscript: "nativeSessionZip" as NSString)
         js.evaluateScript(try String(contentsOf: url))
         guard js.exception == nil else { throw HGError.message("签名组件初始化失败") }
         context = js
@@ -50,6 +62,18 @@ final class Signer {
     }
     func sm3(_ text: String) throws -> String {
         try queue.sync { try runtime().objectForKeyedSubscript("hgSM3").call(withArguments: [text]).toString() }
+    }
+    func dramaCall(_ name: String,_ arguments: [Any]) async throws -> String {
+        try Task.checkCancellation()
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                do {
+                    let js = try self.runtime(); js.exception = nil
+                    guard let value = js.objectForKeyedSubscript(name)?.call(withArguments: arguments)?.toString(),js.exception == nil else { throw HGError.message("播放会话协议处理失败") }
+                    continuation.resume(returning: value)
+                } catch { continuation.resume(throwing: error) }
+            }
+        }
     }
     func singleRequest(id: String,profile: [String:String]) async throws -> URLRequest {
         try await withCheckedThrowingContinuation { continuation in

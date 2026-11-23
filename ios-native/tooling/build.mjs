@@ -15,6 +15,7 @@ const patched = arithmetic
 const shim = fs.readFileSync(new URL('runtime.js', import.meta.url), 'utf8');
 const player = fs.readFileSync(new URL('player-signature.js', import.meta.url), 'utf8');
 const v5 = fs.readFileSync(new URL('signing-v5.js', import.meta.url), 'utf8');
+const drama = fs.readFileSync(new URL('drama-session.js', import.meta.url), 'utf8');
 fs.mkdirSync(new URL('Resources', root), { recursive: true });
 for (const [source,name] of [
   [new URL('licenses/Openhongguo-LICENSE.txt',root),'Openhongguo-LICENSE.txt'],
@@ -27,7 +28,7 @@ for (const [source,name] of [
   [new URL('../kotlin-tv/NOTICE.md',root),'Kotlin-NOTICE.txt'],
 ]) fs.copyFileSync(source,new URL('Resources/' + name,root));
 await build({
-  stdin: { contents: `import { Buffer } from 'buffer';\n${shim}\n${constants}\n${patched}\n${player}\n${v5}\nglobalThis.hgSign = sign;`, resolveDir: new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1') },
+   stdin: { contents: `import { Buffer } from 'buffer';\n${shim}\n${constants}\n${patched}\n${player}\n${v5}\n${drama}\nglobalThis.hgSign = sign;`, resolveDir: new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1') },
   bundle: true, format: 'iife', platform: 'neutral', target: 'safari15', tsconfigRaw: {},
   outfile: new URL('Resources/signer.js', root).pathname.replace(/^\/([A-Za-z]:)/, '$1'),
 });

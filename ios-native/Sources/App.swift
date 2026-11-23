@@ -223,7 +223,7 @@ struct SettingsScreen: View {
                 Section("关于") {
                     Text("红果 TV · iPad 原生版 0.16.13")
                     Text("iOS 15.0 及以上 · SwiftUI / AVPlayer")
-                    Text("播放引擎：openhongguo 0.4.0 · build 4")
+                    Text("播放引擎：Drama SDI 会话 · build 5")
                     Text("内容请求和视频处理均在本机执行，无需伴机服务。")
                     Link("源代码与许可证",destination: URL(string: "https://github.com/Blueanr/hongguoTV")!)
                     Text("个人非官方客户端，与红果官方无关联。接口变化可能影响使用。").font(.footnote).foregroundColor(.secondary)
