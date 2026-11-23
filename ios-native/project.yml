@@ -10,7 +10,7 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: '15.0'
     CODE_SIGNING_ALLOWED: NO
     MARKETING_VERSION: '0.16.13'
-    CURRENT_PROJECT_VERSION: '5'
+    CURRENT_PROJECT_VERSION: '6'
 packages:
   Openhongguo:
     url: https://github.com/beilunyang/openhongguo.git

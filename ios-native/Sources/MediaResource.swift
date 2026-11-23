@@ -180,6 +180,19 @@ final class MediaResource: NSObject, AVAssetResourceLoaderDelegate {
     let queue = DispatchQueue(label: "com.hongguotv.media-loader")
     let bytes: MediaBytes
     private var tasks: [ObjectIdentifier: Task<Void,Never>] = [:]
+    private let diagnosticLock = NSLock()
+    private var requestCount = 0
+    private var deliveredBytes = 0
+    private var lastFailure: String?
+    var diagnostic: String {
+        diagnosticLock.lock(); defer { diagnosticLock.unlock() }
+        return lastFailure ?? "资源加载器：\(requestCount) 次请求，已交付 \(deliveredBytes) 字节"
+    }
+    private func record(request: Bool = false,bytes: Int = 0,failure: String? = nil) {
+        diagnosticLock.lock(); defer { diagnosticLock.unlock() }
+        if request { requestCount += 1 }; deliveredBytes += bytes
+        if let failure = failure { lastFailure = failure }
+    }
     init(_ rendition: Rendition) { bytes = MediaBytes(rendition) }
     func asset() -> AVURLAsset {
         let asset = AVURLAsset(url: URL(string: "hongguo-media://episode/\(UUID().uuidString).mp4")!)
@@ -187,8 +200,10 @@ final class MediaResource: NSObject, AVAssetResourceLoaderDelegate {
         return asset
     }
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource request: AVAssetResourceLoadingRequest) -> Bool {
+        record(request: true)
         let id = ObjectIdentifier(request)
         tasks[id] = Task {
+            var stage = "CDN 视频索引读取／解析"
             do {
                 let (_,total) = try await bytes.prepare()
                 let info = request.contentInformationRequest
@@ -200,12 +215,20 @@ final class MediaResource: NSObject, AVAssetResourceLoaderDelegate {
                     while at < end {
                         try Task.checkCancellation()
                         let upper = min(end,at + 512 * 1024)
+                        stage = "CDN 视频分段读取／解密"
                         let chunk = try await bytes.read(at,upper - 1)
                         try Task.checkCancellation(); data.respond(with: chunk); at = upper
+                        record(bytes: chunk.count)
                     }
                 }
                 if !Task.isCancelled { request.finishLoading() }
-            } catch { if !Task.isCancelled { request.finishLoading(with: error) } }
+            } catch {
+                if !Task.isCancelled {
+                    let failure = PlaybackFailure(stage: stage,cause: error)
+                    record(failure: failure.localizedDescription)
+                    request.finishLoading(with: error)
+                }
+            }
             queue.async { self.tasks.removeValue(forKey: id) }
         }
         return true

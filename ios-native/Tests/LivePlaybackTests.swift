@@ -25,7 +25,12 @@ final class LivePlaybackTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(bytes.count,8)
             XCTAssertEqual(String(decoding: bytes.dropFirst(4).prefix(4),as: UTF8.self),"ftyp")
             print("Drama SDI live episode index \(index): \(rows.count) renditions, MP4 Range OK")
-            if index == 0 { try await verifyPlayer(row) }
+            if index == 0 {
+                // Match PlayerModel's default 720P choice, rather than testing
+                // only the highest-quality stream returned by the endpoint.
+                let selected = try XCTUnwrap(rows.first(where: { $0.quality <= 720 && $0.quality > 0 }) ?? rows.last)
+                try await verifyPlayer(selected)
+            }
         }
     }
     @MainActor private func verifyPlayer(_ row: Rendition) async throws {
@@ -39,11 +44,21 @@ final class LivePlaybackTests: XCTestCase {
             if item.status == .failed {
                 let error = item.error as NSError?
                 let underlying = error?.userInfo[NSUnderlyingErrorKey] as? NSError
-                XCTFail("AVPlayer failed: \(error?.domain ?? "unknown") / \(error?.code ?? 0); underlying \(underlying?.domain ?? "none") / \(underlying?.code ?? 0)")
+                XCTFail("AVPlayer failed: \(error?.domain ?? "unknown") / \(error?.code ?? 0); underlying \(underlying?.domain ?? "none") / \(underlying?.code ?? 0); \(resource.diagnostic)")
                 return
             }
             if item.status == .readyToPlay && player.currentTime().seconds >= 0.5 {
-                print("AVPlayer ready and playback clock advanced through MediaResource")
+                let target = min(10,item.duration.seconds / 2)
+                XCTAssertTrue(target.isFinite && target > 0)
+                let sought = await player.seek(to: CMTime(seconds: target,preferredTimescale: 600),toleranceBefore: .zero,toleranceAfter: .zero)
+                XCTAssertTrue(sought)
+                let seekDeadline = ProcessInfo.processInfo.systemUptime + 20
+                while ProcessInfo.processInfo.systemUptime < seekDeadline && player.currentTime().seconds < target + 0.5 && item.status != .failed {
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                }
+                XCTAssertNotEqual(item.status,.failed,resource.diagnostic)
+                XCTAssertGreaterThanOrEqual(player.currentTime().seconds,target + 0.5)
+                print("AVPlayer default \(row.quality)P ready, clock advanced, seek and resume passed; \(resource.diagnostic)")
                 return
             }
             try await Task.sleep(nanoseconds: 100_000_000)

@@ -163,12 +163,17 @@ actor DramaPlayback {
         try Task.checkCancellation(); busy = true
         defer { busy = false }
         guard ProcessInfo.processInfo.systemUptime >= retryAt else { throw HGError.message("播放服务暂不可用，请 10 秒后重试") }
+        var stage = "SDK 资料初始化"
         do {
             try await assets()
+            stage = "匿名设备注册"
             let profile = try await register()
+            stage = "SDK 会话初始化"
             try await initialize(profile)
+            stage = "播放模型请求"
             let request = try await prepared(profile,id: id)
             let (bytes,response) = try await fetch(request,limit: 2 * 1024 * 1024)
+            stage = "播放模型解析"
             let model = try MobilePlayback.decode(bytes,response: response,id: id,tab: false)
             let rows = Repository.renditions(model)
             guard !rows.isEmpty else { throw HGError.message("当前分集没有兼容的 H.264/HEVC 播放资源") }
@@ -179,7 +184,7 @@ actor DramaPlayback {
             // One new session may be initialized on the next user request; never rotate identities in a loop.
             ready = false; token = ""; ladon = 0
             if error is PlaybackResponseError { throw HGError.message("会话播放接口返回空响应，请稍后重试") }
-            throw error
+            throw PlaybackFailure(stage: stage,cause: error)
         }
     }
 }
