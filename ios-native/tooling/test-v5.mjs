@@ -1,0 +1,115 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Independent SDK digest/carrier fixtures copied (JSON formatting only) from
+// origin/main ac3a1e2, kotlin-tv/core/src/test/resources/signing-v5-*.json.
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { gzipSync } from 'node:zlib';
+
+const nativeHash = (name, data) => crypto.createHash(name).update(Buffer.from(data,'base64')).digest('base64');
+const bundle = fs.readFileSync(new URL('../Resources/signer.js',import.meta.url),'utf8');
+const context = vm.createContext({nativeHash, nativeNonce:() => 'test-process-nonce'});
+vm.runInContext(bundle,context);
+
+// Expose internals only in this source-level test context, never in the app bundle.
+const source = vm.createContext({Buffer, nativeHash, nativeNonce:() => 'test-process-nonce'});
+const vendor = fs.readFileSync(new URL('../../server/vendor/hongguo.cjs',import.meta.url),'utf8');
+vm.runInContext(
+  fs.readFileSync(new URL('runtime.js',import.meta.url),'utf8') + '\n' +
+  vendor.slice(vendor.indexOf('function md5('),vendor.indexOf('async function signedAppGet')) + '\n' +
+  fs.readFileSync(new URL('signing-v5.js',import.meta.url),'utf8') + '\n' +
+  'globalThis.carrier = (key,ts,data,iv) => new V5Carrier(key,ts).encrypt(data,iv);',source);
+const fixture = name => JSON.parse(fs.readFileSync(new URL(`fixtures/${name}.json`,import.meta.url),'utf8'));
+const digests = fixture('signing-v5-f13'), carriers = fixture('signing-v5-carrier');
+assert.equal(digests.length,32);
+for (const row of digests) {
+  const result = source.v5HashF13(Buffer.from(row.query,'hex'),Buffer.from(row.body,'hex'),row.ts);
+  assert.equal(result.subarray(0,16).toString('hex'),row.digest,`SDK digest ts=${row.ts}`);
+  assert.equal(result.length,20);
+  assert.equal(result[16] & 0x24,0x24);
+}
+assert.equal(carriers.length,4);
+for (const row of carriers) {
+  assert.equal(source.carrier(Buffer.from(row.key,'hex'),row.ts,Buffer.from(row.source,'hex'),Buffer.from(row.iv,'hex')).toString('hex'),row.encrypted,`carrier ts=${row.ts}`);
+}
+
+const values = Object.freeze({device_id:'123456789',iid:'987654321',cdid:'synthetic',
+  version_name:'7.4.3.32',channel:'vivo_8662_64',os_version:'12',device_type:'PGT-AN10',
+  aid:'8662',item_id:'123',label:"中文 !'()*~ +&/=",_rticket:'stale'});
+const options = {now:1800000000000,processStarted:1799999999000,processNonce:'synthetic',random:[0.1,0.2,0.3,0.4,0.5]};
+const body = gzipSync(Buffer.from('{"video_id":"123","label":"中文"}'));
+const sign = (body64, opts = options, profile = values) => JSON.parse(context.hgSignV5('https://example.test/model',profile,body64,opts));
+const envelopes = fixture('signing-v5-envelope');
+for (const row of envelopes.rows) {
+  const signed = sign(row.bodyBase64,{...envelopes.options,now:row.now},envelopes.values);
+  assert.equal(new URL(signed.url).searchParams.get('_rticket'),row.ticket);
+  assert.equal(signed.headers['x-helios'],row.helios);
+  assert.equal(crypto.createHash('sha256').update(Buffer.from(signed.headers['x-medusa'],'base64')).digest('hex'),row.medusaSha256);
+}
+const md5 = value => crypto.createHash('md5').update(value).digest();
+const sm3 = value => crypto.createHash('sm3').update(value).digest();
+
+// Compute ticket selection independently using Node SM3/MD5 and bytewise uint32
+// arithmetic; this catches zero-MD5 GETs and timestamp changes across a boundary.
+function nibble(query, bytes, ts) {
+  let state = 0x20230928;
+  const timestamp = Buffer.alloc(4); timestamp.writeUInt32LE(ts);
+  for (const data of [sm3(query),md5(bytes),timestamp]) {
+    for (let i = 0; i < data.length; i++) {
+      state = i % 2 === 0 ? ((state >>> 4) ^ state ^ (state << 6) ^ data[i]) >>> 0 :
+        (~((state >>> 7) ^ state ^ (data[i] | (state << 12)))) >>> 0;
+    }
+  }
+  return state & 15;
+}
+for (let rotation = 0; rotation < 32; rotation++) {
+  for (const body64 of [body.toString('base64'),'']) {
+    const now = options.now + rotation * 1000 + 999, ts = Math.floor(now / 1000);
+    const signed = sign(body64,{...options,now}), url = new URL(signed.url);
+    const ticket = Number(url.searchParams.get('_rticket'));
+    assert.equal(signed.headers['x-khronos'],String(ts));
+    assert.ok(ticket >= now && ticket < now + 1024);
+    assert.equal(nibble(url.search.slice(1),Buffer.from(body64,'base64'),ts),12);
+    for (let earlier = now; earlier < ticket; earlier++) {
+      const query = url.search.slice(1).replace(/_rticket=\d+/,`_rticket=${earlier}`);
+      assert.notEqual(nibble(query,Buffer.from(body64,'base64'),ts),12,'first matching ticket');
+    }
+    for (const [key,value] of Object.entries(values)) if (key !== '_rticket') assert.equal(url.searchParams.get(key),value);
+    assert.equal(url.searchParams.has('ts'),false);
+    assert.ok(url.search.includes('%20%21%27%28%29*~%20%2B%26%2F%3D'));
+    const expected = ['x-khronos','x-helios','x-medusa'];
+    if (body64) {
+      expected.push('Content-Type','x-ss-stub');
+      assert.equal(signed.headers['x-ss-stub'],md5(body).toString('hex').toUpperCase());
+    }
+    assert.deepEqual(Object.keys(signed.headers).sort(),expected.sort());
+    const prefix = Buffer.from(signed.headers['x-medusa'],'base64').subarray(0,20);
+    const timestamp = Buffer.alloc(4); timestamp.writeUInt32LE(ts);
+    for (let i = 0; i < prefix.length; i++) prefix[i] ^= timestamp[i % 4];
+    assert.equal(prefix.toString('hex'),'050000002d4b4fca49750d433fb5ae2c226dcc56');
+    assert.deepEqual(signed,JSON.parse(source.hgSignV5('https://example.test/model',values,body64,{...options,now})), 'bundle/source parity');
+  }
+}
+assert.deepEqual(sign(''),sign(null),'Swift GET sentinel signs MD5(empty) without POST headers');
+assert.equal(values._rticket,'stale');
+assert.notEqual(sign(body.toString('base64')).headers['x-medusa'],sign(Buffer.from('other bytes').toString('base64')).headers['x-medusa']);
+assert.notEqual(sign('').headers['x-medusa'],sign('',options,{...values,device_id:'different'}).headers['x-medusa']);
+assert.notEqual(sign('').headers['x-medusa'],sign('',{...options,processNonce:'other-process'}).headers['x-medusa']);
+assert.notEqual(sign('').headers['x-medusa'],sign('',{...options,processStarted:options.processStarted + 1}).headers['x-medusa']);
+assert.throws(() => sign('',options,{...values,channel:undefined}),/Missing v5 identity field/);
+assert.throws(() => sign('',{...options,random:[]}),/exhausted/);
+
+// Bounded failure path without a real hash preimage search: force unsupported
+// branch results only in the source-test context and count all attempted tickets.
+vm.runInContext('globalThis.attempts = 0; globalThis.originalNibble = v5Nibble; v5Nibble = () => { attempts++; return 0; };',source);
+assert.throws(() => source.hgSignV5('https://example.test/model',values,'',options),/无法生成播放签名/);
+assert.equal(source.attempts,1024);
+vm.runInContext('v5Nibble = originalNibble;',source);
+// v5 must not mutate the legacy DEVICE identity or runtime process state.
+vm.runInContext('Date.now = () => 1800000000000; Math.random = () => 0.5;',context);
+const legacy = () => context.hgSign('https://example.test/catalog',{},null,false);
+const before = legacy();
+sign('',{...options,processNonce:'another-process'}, {...values,device_id:'other-device'});
+assert.equal(legacy(),before,'legacy output is unchanged after v5 signing');
+console.log('v5: 32 independent SDK digests, 4 carrier vectors, 8 Kotlin envelopes, 64 GET/POST rotation cases, exact bytes/identity, GET empty digest, legacy isolation and 1024-ticket bound passed.');

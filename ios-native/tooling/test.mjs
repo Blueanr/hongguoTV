@@ -31,3 +31,4 @@ for(const row of fixtures) {
   assert.deepEqual(lower(actual),lower(row.headers));
 }
 console.log(`Single-video signatures match all ${fixtures.length} independent Go reference fixtures.`);
+await import('./test-v5.mjs');
