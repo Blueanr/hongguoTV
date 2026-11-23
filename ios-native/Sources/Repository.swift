@@ -140,50 +140,7 @@ final class Repository {
     }
     func streams(_ id: String) async throws -> [Rendition] {
         let profile = try await device.profile()
-        // Current Kotlin mainline starts with the single-video Argus/Ladon protocol.
-        do {
-            let request = try await signer.singleRequest(id: id,profile: profile.values)
-            let root = try await HTTP.shared.json(request)
-            guard root.number("code") == 0,root.number("Code") == 0 else { throw HGError.message("播放接口拒绝请求") }
-            let data = root.object("data")
-            var model = Self.jsonValue(data["video_model"])
-            if model.isEmpty,let decoded = Data(base64URL: data.text("video_model")),let text = String(data: decoded,encoding: .utf8) { model = Self.jsonValue(text) }
-            if model.isEmpty && data["video_list"] != nil { model = data }
-            let result = Self.renditions(model)
-            if !result.isEmpty { return result }
-        } catch is CancellationError { throw CancellationError() }
-        catch { /* Bounded fallback to the current Kotlin batch protocol. */ }
-        var values = profile.values
-        for key in ["version_code", "manifest_version_code", "update_version_code", "pv_player"] { values[key] = "73932" }
-        values["version_name"] = "7.3.9.32"
-        let extra = ["video_id":id,"video_id_type":"0","device_level":"1","need_all_video_definition":"1","need_mp4_align":"0","use_os_player":"0","video_platform":"1024","source":"0","from_video_id":""]
-        var failure: Error = HGError.message("没有可播放的视频资源")
-        for post in [false, true] {
-            try Task.checkCancellation()
-            do {
-                let base = "https://api5-normal-sinfonlineb.fqnovel.com" + (post ? "/novel/player/multi_video_model/v1/" : "/reading/bookapi/video_tab/multi_video_model/v1/")
-                let payload: JSON = ["biz_param":["detail_page_version":0,"device_level":1,"disable_digg_stat":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,"use_server_dns":false,"video_platform":1024],"mixed_video_id_map":["1004":[id]]]
-                let body = post ? try JSONSerialization.data(withJSONObject: payload) : nil
-                var request = try await signer.request(base: base, values: post ? values : values.merging(extra) { _, n in n }, body: body, playback: true)
-                request.setValue(profile.cookie, forHTTPHeaderField: "Cookie")
-                let root = try await HTTP.shared.json(request)
-                guard root.number("code") == 0, root.number("Code") == 0 else { throw HGError.message("播放接口返回错误 \(root.text("code"))") }
-                let data = root.object("data"), rows = data["video_model_data"] as? JSON ?? data
-                let entry = rows[id] as? JSON ?? (rows["video_model"] != nil ? rows : [:])
-                var model = Self.jsonValue(entry["video_model"])
-                if model["video_list"] == nil {
-                    let fallback = model.text("fallback_api")
-                    if let url = URL(string: fallback), url.scheme == "https" {
-                        model = try await HTTP.shared.json(URLRequest(url: url))
-                    }
-                }
-                let result = Self.renditions(model)
-                if !result.isEmpty { return result }
-                throw HGError.message("未返回兼容的播放资源")
-            } catch is CancellationError { throw CancellationError() }
-            catch { failure = error }
-        }
-        throw failure
+        return try await MobilePlayback.streams(id: id,device: profile.values,signer: signer)
     }
     static func jsonValue(_ value: Any?) -> JSON {
         if let object = value as? JSON { return object }
@@ -191,8 +148,8 @@ final class Repository {
         return [:]
     }
     static func renditions(_ model: JSON) -> [Rendition] {
-        let rows = model["video_list"] as? [JSON] ?? Array((model["video_list"] as? [String: JSON] ?? [:]).values)
-        return rows.compactMap { row in
+        let rows: [(String,JSON)] = (model["video_list"] as? [JSON]).map { $0.map { ("",$0) } } ?? (model["video_list"] as? [String:JSON] ?? [:]).map { ($0.key,$0.value) }
+        return rows.compactMap { name,row in
             let meta = row.object("video_meta"), enc = row.object("encrypt_info")
             let codec = (row.text("codec_type") + " " + meta.text("codec_type") + " " + row.text("gear_des_key")).lowercased()
             guard !codec.contains("bytevc2"), !codec.contains("bvc2") else { return nil }
@@ -205,8 +162,10 @@ final class Repository {
                     if let candidate = try? Crypto.mediaURL(row.text(field), seed: model.text("key_seed")) { url = candidate; break }
                 }
                 guard let url = url else { return nil }
-                let label = row.text("quality_desc").isEmpty ? meta.text("definition") : row.text("quality_desc")
-                let quality = ["1080":1080,"720":720,"540":540,"480":480,"360":360].first { label.contains($0.key) }?.value ?? min(meta.number("vwidth"),meta.number("vheight"))
+                let width = row.number("vwidth") > 0 ? row.number("vwidth") : meta.number("vwidth")
+                let height = row.number("vheight") > 0 ? row.number("vheight") : meta.number("vheight")
+                let label = [row.text("quality_desc"),meta.text("definition"),width > 0 && height > 0 ? String(min(width,height)) : "",row.text("height"),row.text("vheight"),row.text("quality"),name].first { !$0.isEmpty } ?? ""
+                let quality = [2160,1440,1080,720,540,480,360,240].first { label.contains(String($0)) } ?? Int(label) ?? 0
                 return Rendition(url: url, key: key, quality: quality, codec: codec)
             } catch { return nil }
         }.sorted { $0.quality > $1.quality }

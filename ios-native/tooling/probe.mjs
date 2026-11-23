@@ -50,36 +50,33 @@ const identity=await response.json();
 const device=String(identity.device_id_str||identity.device_id),install=String(identity.install_id_str||identity.install_id);
 if(!/^[1-9]\d+$/.test(device)||!/^[1-9]\d+$/.test(install))throw new Error('Device registration rejected');
 console.log('Anonymous registration OK');
-const now=Date.now(),values={ac:'wifi',channel:'update_64',aid:'8662',app_name:'novelread',version_code:'73532',version_name:'7.3.5.32',device_platform:'android',os:'android',ssmix:'a',device_type:'25053RT47C',device_brand:'Redmi',language:'zh',os_api:'36',os_version:'16',manifest_version_code:'73532',resolution:'1280*2772',dpi:'520',update_version_code:'73532',device_id:device,iid:install,_rticket:String(now)};
-const enc=s=>encodeURIComponent(s).replace(/[!'()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase());
-const query=Object.keys(values).sort().map(k=>enc(k)+'='+enc(values[k])).join('&');
-const payload=Buffer.from(JSON.stringify({biz_param:{need_all_video_definition:true,video_platform:3},content_type:1,video_id:episode}));
-const headers=JSON.parse(context.hgPlayerHeaders(query,payload.toString('base64'),device,now,crypto.randomBytes(11).toString('base64')));
-const reply=await request('https://api5-normal-sinfonlineb.fqnovel.com/novel/player/video_model/v1/?'+query,{method:'POST',body:payload,headers:{...headers,'User-Agent':'com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)','Content-Type':'application/json; charset=utf-8',Accept:'application/json','Sdk-Version':'2','X-XS-From-Web':'0'}});
-let text=await reply.text();
-let result=text?JSON.parse(text):{};
-let model=result.data?.video_model||result.data;
-if(!model) {
-  console.log('Single-video response unavailable; checking bounded batch fallback');
-  const profile={...values,version_code:'73932',version_name:'7.3.9.32',manifest_version_code:'73932',update_version_code:'73932',pv_player:'73932',host_abi:'arm64-v8a',dragon_device_type:'phone',compliance_status:'0',need_personal_recommend:'1',player_so_load:'1',is_android_pad_screen:'0',cdid:header.cdid};
-  delete profile._rticket;
-  const cookies=response.headers.getSetCookie().map(s=>s.split(';')[0]).join('; ');
-  for(const post of [false,true]) {
-    const extra={video_id:episode,video_id_type:'0',device_level:'1',need_all_video_definition:'1',need_mp4_align:'0',use_os_player:'0',video_platform:'1024',source:'0',from_video_id:''};
-    const data=post?Buffer.from(JSON.stringify({biz_param:{detail_page_version:0,device_level:1,disable_digg_stat:false,need_all_video_definition:true,need_mp4_align:false,use_os_player:false,use_server_dns:false,video_platform:1024},mixed_video_id_map:{1004:[episode]}})):null;
-    const signed=JSON.parse(context.hgSign('https://api5-normal-sinfonlineb.fqnovel.com'+(post?'/novel/player/multi_video_model/v1/':'/reading/bookapi/video_tab/multi_video_model/v1/'),post?profile:{...profile,...extra},data?.toString('base64')??null,true));
-    const response=await request(signed.url,{method:post?'POST':'GET',body:data,headers:{...signed.headers,Cookie:cookies}});
-    text=await response.text();console.log(post?'POST fallback':'GET fallback','response bytes:',text.length);
-    if(!text)continue;
-    result=JSON.parse(text);const entries=result.data?.video_model_data||result.data;
-    model=entries?.[episode]?.video_model||entries?.video_model;
-    if(model)break;
-  }
+const values={aid:'8662',app_name:'novelread',version_code:'74332',version_name:'7.4.3.32',channel:'vivo_8662_64',device_platform:'android',device_type:'PGT-AN10',os_version:'12',update_version_code:'74332',iid:install,cdid:header.cdid,device_id:device};
+async function modelRequest(id,tab,host) {
+  const extra={video_id:id,video_id_type:'0',device_level:'1',need_all_video_definition:'1',need_mp4_align:'0',use_os_player:'0',video_platform:'1024',source:'0',from_video_id:''};
+  const data=tab?null:zlib.gzipSync(Buffer.from(JSON.stringify({biz_param:{detail_page_version:0,device_level:1,disable_digg_stat:false,disable_video_relate_book:false,need_all_video_definition:true,need_mp4_align:false,use_os_player:false,use_server_dns:false,video_platform:1024},mixed_video_id_map:{1004:[id]},dr_scene:'player'})));
+  const signed=JSON.parse(context.hgSignV5('https://'+host+(tab?'/reading/bookapi/video_tab/multi_video_model/v1/':'/novel/player/multi_video_model/player/v1'),tab?{...values,...extra}:values,data?.toString('base64')??''));
+  const headers={...signed.headers,Accept:tab?'application/json; charset=utf-8':'application/json','User-Agent':tab?'com.phoenix.read/73932 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)':'com.phoenix.read/73932 (Linux; U; Android 12; zh_CN_#Hans; PGT-AN10; Build/V417IR;tt-ok/3.12.13.20)'};
+  if(tab){for(const key of ['Content-Type','Content-Encoding','x-ss-stub'])delete headers[key];headers['Accept-Language']='zh-CN,zh;q=0.9';}else headers['Content-Encoding']='gzip';
+  const reply=await request(signed.url,{method:tab?'GET':'POST',body:data,headers});
+  const text=await reply.text();
+  console.log(tab?'V5 GET':'V5 POST',host.includes('sinfonlinea')?'primary':'alternate','bytes:',Buffer.byteLength(text));
+  if(!text.trim()){if(reply.headers.has('Retry-After'))throw new Error('Service backoff');return null;}
+  const root=JSON.parse(text);if((root.code||root.Code||0)!==0)throw new Error('Model rejected');
+  const entries=tab?(root.data?.video_model_data||root.data):(root.data?.['1004']||root.data);
+  const raw=entries?.[id]?.video_model;
+  if(!raw)throw new Error('Exact episode absent');
+  return typeof raw==='string'?JSON.parse(raw):raw;
 }
-if(!model)throw new Error('All playback routes returned no model');
-if(typeof model==='string'){try{model=JSON.parse(model);}catch{model=JSON.parse(Buffer.from(model,'base64').toString());}}
-const list=Array.isArray(model.video_list)?model.video_list:Object.values(model.video_list||{});
-if(!list.length)throw new Error('Playback model has no renditions');
-console.log('Playback model OK:',list.length,'renditions');
-const media=list.find(r=>/^https?:/.test(r.main_url));
-if(media){const range=await request(media.main_url,{headers:{Range:'bytes=0-1023'}});const bytes=Buffer.from(await range.arrayBuffer());if(range.status!==206||bytes.subarray(4,8).toString()!=='ftyp')throw new Error('Media range is invalid');console.log('Media CDN MP4 range OK');}
+const compatible=model=>(Array.isArray(model.video_list)?model.video_list:Object.values(model.video_list||{})).filter(r=>!/bytevc2|bvc2/i.test([r.codec_type,r.gear_des_key,r.video_meta?.codec_type].join(' ')));
+for(const id of [...new Set([episode,String(detail.vid_list[Math.min(53,detail.vid_list.length-1)]),String(detail.vid_list.at(-1))])]){
+  let model=await modelRequest(id,false,'api5-normal-sinfonlinea.fqnovel.com');
+  if(!model){model=await modelRequest(id,true,'api5-normal-sinfonlineb.fqnovel.com');if(model&&!compatible(model).length)model=await modelRequest(id,false,'api5-normal-sinfonlineb.fqnovel.com');}
+  if(!model)throw new Error('Playback routes empty');
+  const list=compatible(model);if(!list.length)throw new Error('No compatible renditions');
+  console.log('V5 playback OK:',list.length,'compatible renditions');
+  let media=list.map(r=>r.main_url||r.play_url||r.backup_url_1).map(url=>/^https?:/.test(url)?url:Buffer.from(url,'base64').toString()).find(url=>/^https?:/.test(url));
+  if(!media)throw new Error('No directly decodable CDN URL for probe');
+  const range=await request(media,{headers:{Range:'bytes=0-1023'}}),bytes=Buffer.from(await range.arrayBuffer());
+  if(range.status!==206||bytes.subarray(4,8).toString()!=='ftyp')throw new Error('Media range invalid');
+  console.log('Media CDN MP4 range OK');
+}

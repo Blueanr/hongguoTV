@@ -25,17 +25,24 @@ final class Signer {
         context = js
         return js
     }
-    func request(base: String, values: [String: String], body: Data? = nil, playback: Bool = false) async throws -> URLRequest {
+    func request(base: String, values: [String: String], body: Data? = nil, playback: Bool = false, mobileV5: Bool = false) async throws -> URLRequest {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
                 do {
                     let js = try self.runtime(); js.exception = nil
-                    let args: [Any] = [base, values, body.map { $0.base64EncodedString() } as Any? ?? NSNull(), playback]
-                    guard let result = js.objectForKeyedSubscript("hgSign")?.call(withArguments: args)?.toString(), js.exception == nil,
+                    let args: [Any] = mobileV5 ? [base,values,(body ?? Data()).base64EncodedString()] : [base, values, body.map { $0.base64EncodedString() } as Any? ?? NSNull(), playback]
+                    guard let result = js.objectForKeyedSubscript(mobileV5 ? "hgSignV5" : "hgSign")?.call(withArguments: args)?.toString(), js.exception == nil,
                           let data = result.data(using: .utf8), let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                           let path = object["url"] as? String, let url = URL(string: path), let headers = object["headers"] as? [String: String] else { throw HGError.message("请求签名失败") }
                     var request = URLRequest(url: url); request.allHTTPHeaderFields = headers
                     request.httpMethod = body == nil ? "GET" : "POST"; request.httpBody = body
+                    if mobileV5 {
+                        request.httpShouldHandleCookies = false
+                        request.setValue(nil,forHTTPHeaderField: "Cookie")
+                        if body == nil {
+                            for name in ["Content-Type","Content-Encoding","x-ss-stub"] { request.setValue(nil,forHTTPHeaderField: name) }
+                        }
+                    }
                     continuation.resume(returning: request)
                 } catch { continuation.resume(throwing: error) }
             }

@@ -1,6 +1,11 @@
 name: iOS 15 TrollStore IPA
 on:
   workflow_dispatch:
+    inputs:
+      live_playback:
+        description: 'Run anonymous real-network playback checks'
+        type: boolean
+        default: false
   push:
     branches: [ios-native]
     paths:
@@ -34,6 +39,8 @@ jobs:
         run: bash scripts/build-ios.sh
       - name: Simulator tests
         timeout-minutes: 12
+        env:
+          TEST_RUNNER_HONGGUO_LIVE_PLAYBACK: ${{ inputs.live_playback && '1' || '0' }}
         run: |
           DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; print(next(d["udid"] for ds in json.load(sys.stdin)["devices"].values() for d in ds if "iPad" in d["name"]))')
           xcrun simctl boot "$DEVICE" || true

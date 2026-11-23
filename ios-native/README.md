@@ -26,6 +26,12 @@
 
 最低部署版本和编译成功不等于 iOS 15 实机验收；账号接口、媒体服务和 CDN 的可用性仍受上游影响。
 
+## 0.16.13 播放接口同步
+
+播放链已对齐 Kotlin `kotlin-v0.16.13`（`ac3a1e2e866b2a917651575ba507adfe62344932`），详情见 [接口核对记录](PROTOCOL_ALIGNMENT.md)。此前 iOS 版保留 0.16.2 的单集 Argus/Ladon 与 v3 批量回退；新版使用 v5 Medusa/Helios/Khronos、gzip 请求体与 `/novel/player/multi_video_model/player/v1`。
+
+主接口空响应后，同一匿名设备使用 v5 签名的 video-tab GET；若仅返回不支持的 bytevc2，则按 0.16.13 在备用域名重试新版 POST。GET 签名使用空字节摘要，线上不发送请求体、POST 专用头或账户 Cookie。明确拒绝、格式异常、服务退避不会触发盲目回退。网站片单与已有账号功能仍使用各自协议。
+
 ## 构建
 
 GitHub Actions 使用 macOS runner，完成真机 Release 构建、ad-hoc 签名检查、iPad 模拟器测试后上传 IPA。触发方式：推送 `ios-native` 分支或手动运行工作流。
@@ -47,6 +53,7 @@ bash scripts/build-ios.sh
 ## 测试与结构
 
 - `Sources/Repository.swift`：网站片单、匿名设备注册、播放模型。
+- `Sources/MobilePlayback.swift`：0.16.13 v5 播放请求、严格分集匹配及空响应恢复。
 - `Sources/Signer.swift` 与 `tooling/`：JavaScriptCore 执行仓库中已固定来源的签名算术；不执行网络下发脚本。标准哈希调用 CommonCrypto，SM3 有标准向量覆盖。
 - `Sources/MediaResource.swift`：有界 Range 读取、MP4 索引校验、CENC 子样本 CTR 解码、AVAssetResourceLoader。
 - `Sources/Account.swift`：扫码流程、Keychain、账户读写。
@@ -58,6 +65,6 @@ npm --prefix ios-native/tooling run build
 npm --prefix ios-native/tooling test
 ```
 
-可选联网诊断：`node ios-native/tooling/probe.mjs`。它检查片单、详情、匿名注册、单集及备用播放模型和 CDN MP4 分段，只输出阶段和数量。2026-11-14 本地采样曾出现单集空响应，后续复测成功取得 5 档资源；该结果不是 iPad 实机播放验收。
+可选联网诊断：`node ios-native/tooling/probe.mjs`。它检查片单、详情、匿名注册、新版 v5 主接口及必要的备用播放模型，抽查首集／第 54 集（不足则最后一集）／最后一集的 CDN MP4 分段，只输出阶段和数量。该结果不是 iPad 实机播放验收。
 
 协议实现来源于本仓库 `kotlin-tv/core`，签名算术构建时复用 `server/vendor/hongguo.cjs` 中固定来源的算法片段；版权与许可证见 [NOTICE](NOTICE.md)。
