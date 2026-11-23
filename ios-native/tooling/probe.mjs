@@ -46,7 +46,10 @@ const compressed=zlib.gzipSync(Buffer.from(JSON.stringify({magic_tag:'ss_app_log
 const cipher=crypto.createCipheriv('aes-128-cbc',derived.subarray(0,16),derived.subarray(16,32));
 const body=Buffer.concat([Buffer.from('746305100000','hex'),seed,cipher.update(Buffer.concat([hash('sha512',compressed),compressed])),cipher.final()]);
 const response=await request('https://log5-applog-lf.fqnovel.com/service/2/device_register/?tt_data=a&cronet_version=8d40f833_2026-03-03&ttnet_version=4.2.243.31-douyin&use_store_region_cookie=1',{method:'POST',body,headers:{'User-Agent':'com.phoenix.read/72232 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3)','Content-Type':'application/octet-stream;tt-data=a','log-encode-type':'gzip','x-ss-dp':'8662','x-ss-req-ticket':String(Date.now()),'x-vc-bdturing-sdk-version':'4.0.3.cn',lc:'101','sdk-version':'2','passport-sdk-version':'5051452','x-neptune':'-8|50:51:59:30:40:47:49:39','x-ss-stub':hash('md5',body).toString('hex').toUpperCase()}});
-const identity=await response.json();
+// Registration IDs can exceed JS's safe integer range. Preserve numeric JSON IDs
+// as strings before parsing, matching Swift's exact NSNumber representation.
+const registrationText=await response.text();
+const identity=JSON.parse(registrationText.replace(/("(?:device_id|install_id)"\s*:\s*)(\d+)(?=\s*[,}])/g,'$1"$2"'));
 const device=String(identity.device_id_str||identity.device_id),install=String(identity.install_id_str||identity.install_id);
 if(!/^[1-9]\d+$/.test(device)||!/^[1-9]\d+$/.test(install))throw new Error('Device registration rejected');
 console.log('Anonymous registration OK');

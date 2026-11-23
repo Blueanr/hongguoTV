@@ -30,3 +30,9 @@ Swift 回归测试覆盖主请求 gzip 与摘要、v5 GET 头部、同设备同�
 GitHub Actions 手动运行时可勾选 `live_playback`，通过 `TEST_RUNNER_HONGGUO_LIVE_PLAYBACK=1` 在 iPad 模拟器调用实际 Swift `Repository.streams`，验证模型、签名及 CDN Range。常规构建跳过该联网项，避免把上游可用性当作单元测试；其余回归测试正常运行。
 
 本次同步是播放接口修复，不代表 iOS 与 Android 全功能等价；完整功能差异见 README。播放 UI、AVPlayer 解码、iPad 手势仍需要实机验收。
+
+### 已执行结果（2026-11-23）
+
+- JS：32 组独立 F13、4 组 carrier、8 组完整 Kotlin 签名与 64 组 GET/POST 轮换检查通过。
+- Actions `45175510100`：真机 IPA 编译成功，16 项离线 Swift 回归测试通过；显式联网测试失败，主接口及 video-tab 恢复未取得非空模型。该运行整体标记失败，不能作为播放恢复的证明。
+- Windows Node 探针：首轮片单、详情（71 集）、匿名注册成功，但两个模型请求均为空；随后检查中网站片单 HTTP 502。探针已修正数字设备 ID 超过 JS 安全整数范围时的解析风险，Swift 使用 Foundation NSNumber 不受该探针问题影响。
