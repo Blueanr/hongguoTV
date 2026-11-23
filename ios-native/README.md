@@ -26,7 +26,15 @@
 
 最低部署版本和编译成功不等于 iOS 15 实机验收；账号接口、媒体服务和 CDN 的可用性仍受上游影响。
 
-## 0.16.13 播放接口同步
+## 当前播放引擎：openhongguo 0.4.0（build 4）
+
+播放入口已替换为 [openhongguo](https://github.com/beilunyang/openhongguo) 原生 Swift SDK，固定版本 **0.4.0**。SDK 在本机处理匿名设备注册、持久化、签名、播放模型与内容密钥。设备被拒或播放空响应时，一次调用最多更换 2 台匿名设备，可重试网络请求最多尝试 3 次；应用设置 60 秒总等待上限，退出或切集会取消 SDK 请求。
+
+返回的兼容 MP4 资源接入现有 AVPlayer/CENC 播放器，保留侧滑返回、自定义倍速、清晰度和续播。SDK 的匿名资料保存在 Application Support/openhongguo/anonymous.json，不参与系统备份。片单、账号功能使用已有入口。SDK 返回仍受上游可用性影响，空响应重试耗尽时会明确显示错误。
+
+2026-11-23 Windows Node SDK 0.4.0 对照：搜索与分集列表成功，播放在 SDK 有限恢复后返回 `ANONYMOUS_LIMITED`。此结果不等同于 iOS 原生 SDK 或 iPad 实机验收。
+
+## 历史：0.16.13 播放接口同步（build 3）
 
 播放链已对齐 Kotlin `kotlin-v0.16.13`（`ac3a1e2e866b2a917651575ba507adfe62344932`），详情见 [接口核对记录](PROTOCOL_ALIGNMENT.md)。此前 iOS 版保留 0.16.2 的单集 Argus/Ladon 与 v3 批量回退；新版使用 v5 Medusa/Helios/Khronos、gzip 请求体与 `/novel/player/multi_video_model/player/v1`。
 
@@ -53,7 +61,8 @@ bash scripts/build-ios.sh
 ## 测试与结构
 
 - `Sources/Repository.swift`：网站片单、匿名设备注册、播放模型。
-- `Sources/MobilePlayback.swift`：0.16.13 v5 播放请求、严格分集匹配及空响应恢复。
+- `Sources/SDKPlayback.swift`：当前 openhongguo 播放入口、资源/密钥适配与错误提示。
+- `Sources/MobilePlayback.swift`：保留的 0.16.13 v5 协议回归参考，当前播放不调用该路径。
 - `Sources/Signer.swift` 与 `tooling/`：JavaScriptCore 执行仓库中已固定来源的签名算术；不执行网络下发脚本。标准哈希调用 CommonCrypto，SM3 有标准向量覆盖。
 - `Sources/MediaResource.swift`：有界 Range 读取、MP4 索引校验、CENC 子样本 CTR 解码、AVAssetResourceLoader。
 - `Sources/Account.swift`：扫码流程、Keychain、账户读写。

@@ -1,5 +1,7 @@
 # 0.16.13 APK / iOS 播放接口核对
 
+> 后续 build 4 已按用户要求将正式播放入口替换为 openhongguo Swift SDK 0.4.0。以下记录描述 build 3 的手工协议对齐与当时的联网结果，不代表当前 SDK 路径的测试结果。SDK 接入说明见 README。
+
 ## 参考身份（2026-11-23）
 
 - 用户提供 `hongguotv-kotlin-0.16.13-android6-arm64-v8a.apk`。

@@ -17,6 +17,8 @@ const player = fs.readFileSync(new URL('player-signature.js', import.meta.url), 
 const v5 = fs.readFileSync(new URL('signing-v5.js', import.meta.url), 'utf8');
 fs.mkdirSync(new URL('Resources', root), { recursive: true });
 for (const [source,name] of [
+  [new URL('licenses/Openhongguo-LICENSE.txt',root),'Openhongguo-LICENSE.txt'],
+  [new URL('licenses/Go-LICENSE.txt',root),'Go-LICENSE.txt'],
   [new URL('../LICENSE',root),'LICENSE.txt'],
   [new URL('NOTICE.md',root),'NOTICE.txt'],
   [new URL('../server/vendor/NOTICE.md',root),'Vendor-NOTICE.txt'],

@@ -49,6 +49,7 @@ jobs:
           xcrun simctl launch "$DEVICE" com.hongguotv.ipad
           xcrun simctl io "$DEVICE" screenshot outputs/ios/iPad-simulator.png
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && hashFiles('outputs/ios/*.ipa') != '' }}
         with:
           name: HongguoTV-iOS15-TrollStore
           path: |

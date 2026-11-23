@@ -139,8 +139,7 @@ final class Repository {
         return Detail(series: Series(row), episodes: episodes)
     }
     func streams(_ id: String) async throws -> [Rendition] {
-        let profile = try await device.profile()
-        return try await MobilePlayback.streams(id: id,device: profile.values,signer: signer)
+        try await SDKPlayback.shared.streams(id)
     }
     static func jsonValue(_ value: Any?) -> JSON {
         if let object = value as? JSON { return object }
