@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import XCTest
+import AVFoundation
 @testable import HongguoPad
 
 // Explicit opt-in: real anonymous registration and network requests, no account.
@@ -24,6 +25,29 @@ final class LivePlaybackTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(bytes.count,8)
             XCTAssertEqual(String(decoding: bytes.dropFirst(4).prefix(4),as: UTF8.self),"ftyp")
             print("Drama SDI live episode index \(index): \(rows.count) renditions, MP4 Range OK")
+            if index == 0 { try await verifyPlayer(row) }
         }
+    }
+    @MainActor private func verifyPlayer(_ row: Rendition) async throws {
+        let resource = MediaResource(row)
+        let item = AVPlayerItem(asset: resource.asset())
+        let player = AVPlayer(playerItem: item)
+        defer { player.pause(); player.replaceCurrentItem(with: nil); resource.cancel() }
+        player.play()
+        let deadline = ProcessInfo.processInfo.systemUptime + 45
+        while ProcessInfo.processInfo.systemUptime < deadline {
+            if item.status == .failed {
+                let error = item.error as NSError?
+                let underlying = error?.userInfo[NSUnderlyingErrorKey] as? NSError
+                XCTFail("AVPlayer failed: \(error?.domain ?? "unknown") / \(error?.code ?? 0); underlying \(underlying?.domain ?? "none") / \(underlying?.code ?? 0)")
+                return
+            }
+            if item.status == .readyToPlay && player.currentTime().seconds >= 0.5 {
+                print("AVPlayer ready and playback clock advanced through MediaResource")
+                return
+            }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTFail("AVPlayer did not advance within 45 seconds; status \(item.status.rawValue)")
     }
 }
