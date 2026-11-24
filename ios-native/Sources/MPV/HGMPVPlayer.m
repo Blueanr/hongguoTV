@@ -121,7 +121,9 @@ static void *getGL(void *ctx,const char *name) { return dlsym(RTLD_DEFAULT,name)
         const char *options[][2] = {{"vo","libmpv"},{"hwdec","auto"},{"video-sync","display-resample"},
             {"audio-pitch-correction","yes"},{"cache","yes"},{"demuxer-max-bytes","33554432"},
             {"demuxer-max-back-bytes","8388608"},{"idle","yes"},{"keep-open","yes"},
-            {"terminal","no"},{"input-default-bindings","no"},{"osc","no"},{"osd-level","0"},
+            // The iOS distribution omits Lua/OSC. Controls are native SwiftUI;
+            // do not set the unavailable desktop-only osc option.
+            {"terminal","no"},{"input-default-bindings","no"},{"osd-level","0"},
             {"stop-playback-on-init-failure","yes"}};
         for (NSUInteger i=0;i<sizeof(options)/sizeof(options[0]);i++) {
             if (![self option:options[i][0] value:options[i][1]]) return;

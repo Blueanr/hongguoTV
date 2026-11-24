@@ -118,6 +118,9 @@ final class LivePlaybackTests: XCTestCase {
             }
             XCTAssertNil(model.error)
             XCTAssertFalse(model.loading)
+            guard model.error == nil,!model.loading else {
+                throw HGError.message(model.error ?? "libmpv startup timed out")
+            }
             XCTAssertNotNil(model.player)
             XCTAssertGreaterThan(model.duration,0)
             model.setRate(3)
