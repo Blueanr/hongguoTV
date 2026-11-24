@@ -1,8 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import XCTest
+import AVFoundation
 @testable import HongguoPad
 
 final class CoreTests: XCTestCase {
+    @MainActor func testOldPlayerStopCannotInterruptNewAudioSession() throws {
+        let first = UUID(),second = UUID()
+        try PlaybackAudioSession.activate(first)
+        try PlaybackAudioSession.activate(second)
+        PlaybackAudioSession.release(first)
+        // The old player's delayed stop must not release the new owner's lease.
+        XCTAssertTrue(PlaybackAudioSession.isOwner(second))
+        PlaybackAudioSession.release(second)
+        XCTAssertFalse(PlaybackAudioSession.isOwner(second))
+    }
     func testCustomSpeedInputValidation() {
         XCTAssertEqual(PlaybackSpeed.parse(" 1.25 "),1.25)
         XCTAssertEqual(PlaybackSpeed.parse("1,75"),1.75)

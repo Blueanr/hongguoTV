@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import XCTest
 import AVFoundation
+import QuartzCore
+import CoreVideo
 @testable import HongguoPad
 
 // Explicit opt-in: real anonymous registration and network requests, no account.
@@ -30,13 +32,14 @@ final class LivePlaybackTests: XCTestCase {
                 // only the highest-quality stream returned by the endpoint.
                 let selected = try XCTUnwrap(rows.first(where: { $0.quality <= 720 && $0.quality > 0 }) ?? rows.last)
                 try await verifyPlayer(selected)
+                try await verifyReentry(selected)
             }
         }
     }
     @MainActor private func verifyPlayer(_ row: Rendition) async throws {
         let resource = MediaResource(row)
         let item = AVPlayerItem(asset: resource.asset())
-        PlaybackTuning.apply(item,rate: 1)
+        PlaybackTuning.configure(item,rate: 1)
         let player = AVPlayer(playerItem: item)
         defer { player.pause(); player.replaceCurrentItem(with: nil); resource.cancel() }
         player.play()
@@ -87,5 +90,47 @@ final class LivePlaybackTests: XCTestCase {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         XCTFail("AVPlayer did not advance within 45 seconds; status \(item.status.rawValue)")
+    }
+    @MainActor private func verifyReentry(_ row: Rendition) async throws {
+        let suite = "PlaybackReentry.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let detail = Detail(series: Series(id: "1",title: "Reentry"),episodes: ["123456789"])
+        for pass in 0..<2 {
+            let model = PlayerModel(detail: detail,index: 0,position: 0,library: Library(),defaults: defaults,resolve: { _ in [row] })
+            defer { model.stop() }
+            if pass == 1 { XCTAssertEqual(model.rate,3,"Restore speed on fresh player") }
+            model.start()
+            let deadline = ProcessInfo.processInfo.systemUptime + 45
+            while (model.loading || model.player.currentItem == nil) && model.error == nil && ProcessInfo.processInfo.systemUptime < deadline {
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            XCTAssertNil(model.error)
+            XCTAssertFalse(model.loading)
+            let item = try XCTUnwrap(model.player.currentItem)
+            XCTAssertEqual(item.audioTimePitchAlgorithm,.spectral)
+            XCTAssertTrue(item.tracks.contains { $0.isEnabled && $0.assetTrack?.mediaType == .audio },"Enabled audio track after startup")
+            let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String:kCVPixelFormatType_32BGRA])
+            item.add(output)
+            model.setRate(3)
+            let warmup = ProcessInfo.processInfo.systemUptime + 15
+            while model.player.timeControlStatus != .playing && ProcessInfo.processInfo.systemUptime < warmup {
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            var frames = 0
+            for _ in 0..<90 {
+                let time = output.itemTime(forHostTime: CACurrentMediaTime())
+                if output.hasNewPixelBuffer(forItemTime: time), output.copyPixelBuffer(forItemTime: time,itemTimeForDisplay: nil) != nil { frames += 1 }
+                try await Task.sleep(nanoseconds: 33_000_000)
+            }
+            XCTAssertGreaterThan(frames,15,"Decoded video frames, not just an advancing clock")
+            XCTAssertFalse(model.player.isMuted)
+            XCTAssertGreaterThan(model.player.volume,0)
+            XCTAssertTrue(item.tracks.contains { $0.isEnabled && $0.assetTrack?.mediaType == .audio })
+            print("Production 3x reentry pass \(pass + 1): \(frames) decoded frames / 90 samples, audio track enabled; speaker output still requires device validation")
+            model.player.pause(); model.setRate(3)
+            XCTAssertEqual(model.player.rate,0)
+            model.stop()
+        }
     }
 }

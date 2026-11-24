@@ -15,6 +15,9 @@ import AVKit
     @Published var sleepMinutes = 0
     private var sleepTask: Task<Void,Never>?
     private var loadTask: Task<Void,Never>?
+    private let audioOwner = UUID()
+    private var active = false
+    private let resolve: (String) async throws -> [Rendition]
     private var resource: MediaResource?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
@@ -26,9 +29,11 @@ import AVKit
     private var initialPosition: Double
     private var lastUpload = Date.distantPast
     private var uploading = false
-    init(detail: Detail,index: Int,position: Double,library: Library,defaults: UserDefaults = .standard) {
+    init(detail: Detail,index: Int,position: Double,library: Library,defaults: UserDefaults = .standard,
+         resolve: @escaping (String) async throws -> [Rendition] = { try await Repository.shared.streams($0) }) {
         self.detail = detail; self.index = index; self.initialPosition = position; self.library = library
         self.defaults = defaults
+        self.resolve = resolve
         let savedRate = defaults.float(forKey: PlaybackSpeed.key)
         rate = PlaybackSpeed.valid(savedRate) ? savedRate : 1
         if #available(iOS 16.0, *) { player.defaultRate = rate }
@@ -36,15 +41,16 @@ import AVKit
         // while playing, never turn a paused player back on.
         rateObserver = player.observe(\.rate,options: [.new]) { [weak self] _,_ in
             Task { @MainActor in
-                guard let self = self, self.player.rate > 0, self.player.rate != self.rate else { return }
+                guard let self = self, self.active, !self.loading, self.player.rate > 0, self.player.rate != self.rate else { return }
                 self.player.rate = self.rate
             }
         }
     }
     func start() {
         guard timeObserver == nil else { return }
-        try? AVAudioSession.sharedInstance().setCategory(.playback,mode: .moviePlayback)
-        try? AVAudioSession.sharedInstance().setActive(true)
+        do { try PlaybackAudioSession.activate(audioOwner) }
+        catch { self.error = PlaybackFailure(stage: "音频会话初始化",cause: error).localizedDescription; return }
+        active = true
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 5,preferredTimescale: 600),queue: .main) { [weak self] _ in
             Task { @MainActor in self?.save() }
         }
@@ -53,7 +59,7 @@ import AVKit
     func load(_ newIndex: Int,position: Double = 0) {
         guard detail.episodes.indices.contains(newIndex) else { return }
         save(); currentEpisode = nil; player.pause()
-        loadTask?.cancel(); resource?.cancel(); resource = nil
+        loadTask?.cancel(); player.cancelPendingPrerolls(); resource?.cancel(); resource = nil
         statusObserver = nil
         if let endObserver = endObserver { NotificationCenter.default.removeObserver(endObserver); self.endObserver = nil }
         player.replaceCurrentItem(with: nil)
@@ -61,14 +67,14 @@ import AVKit
         index = newIndex; error = nil; loading = true
         loadTask = Task {
             do {
-                let streams = try await Repository.shared.streams(detail.episodes[newIndex])
+                let streams = try await resolve(detail.episodes[newIndex])
                 try Task.checkCancellation()
                 guard generation == id else { return }
                 qualities = Array(Set(streams.map(\.quality).filter { $0 > 0 })).sorted(by: >)
                 guard let selected = streams.first(where: { $0.quality <= quality && $0.quality > 0 }) ?? streams.last else { throw HGError.message("没有兼容的播放资源") }
                 let source = MediaResource(selected); resource = source
                 let item = AVPlayerItem(asset: source.asset())
-                PlaybackTuning.apply(item,rate: rate)
+                PlaybackTuning.configure(item,rate: rate)
                 currentEpisode = newIndex
                 statusObserver = item.observe(\.status,options: [.initial,.new]) { [weak self] item,_ in
                     Task { @MainActor in
@@ -76,9 +82,8 @@ import AVKit
                         if item.status == .failed {
                             self.loading = false
                             let reason = item.error.map { PlaybackFailure.describe($0) } ?? "未知错误"
-                            self.error = "播放器：\(reason)\n\(source.diagnostic)\n\(selected.quality)P · \(selected.codec) · iOS \(UIDevice.current.systemVersion) · build 9"
+                            self.error = "播放器：\(reason)\n\(source.diagnostic)\n\(selected.quality)P · \(selected.codec) · iOS \(UIDevice.current.systemVersion) · build 10"
                         }
-                        if item.status == .readyToPlay { self.loading = false }
                     }
                 }
                 endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime,object: item,queue: .main) { [weak self] _ in
@@ -89,12 +94,35 @@ import AVKit
                     }
                 }
                 player.replaceCurrentItem(with: item)
+                // On iOS 15, restoring >2x before tracks are ready can start
+                // video without a prepared audio pipeline. Wait, seek, then
+                // preroll both decoders at the intended rate before starting.
+                let deadline = ProcessInfo.processInfo.systemUptime + 30
+                while item.status == .unknown {
+                    try Task.checkCancellation()
+                    guard ProcessInfo.processInfo.systemUptime < deadline else { throw HGError.message("播放器准备超时") }
+                    try await Task.sleep(nanoseconds: 50_000_000)
+                }
+                guard item.status == .readyToPlay else { throw item.error ?? HGError.message("播放器准备失败") }
                 if position > 0 { await player.seek(to: CMTime(seconds: position,preferredTimescale: 600)) }
                 try Task.checkCancellation()
+                guard generation == id,active else { return }
+                var preparedRate: Float
+                repeat {
+                    preparedRate = rate
+                    let ready = await withCheckedContinuation { continuation in
+                        player.preroll(atRate: preparedRate) { continuation.resume(returning: $0) }
+                    }
+                    try Task.checkCancellation()
+                    guard generation == id,active else { return }
+                    guard ready else { throw HGError.message("音视频预缓冲未完成，请重试") }
+                } while preparedRate != rate
+                try PlaybackAudioSession.activate(audioOwner)
+                loading = false
                 player.automaticallyWaitsToMinimizeStalling = true
                 player.rate = rate
             } catch is CancellationError { }
-            catch { if generation == id { self.error = PlaybackFailure.describe(error) + "\niOS \(UIDevice.current.systemVersion) · build 9"; loading = false } }
+            catch { if generation == id { self.error = PlaybackFailure.describe(error) + "\niOS \(UIDevice.current.systemVersion) · build 10"; loading = false } }
         }
     }
     func save(completed: Bool = false) {
@@ -126,12 +154,13 @@ import AVKit
         }
     }
     func stop() {
-        save(); loadTask?.cancel(); sleepTask?.cancel(); player.pause(); resource?.cancel()
+        save(); active = false; generation = UUID(); loading = false
+        loadTask?.cancel(); sleepTask?.cancel(); player.cancelPendingPrerolls(); player.pause(); resource?.cancel()
         statusObserver = nil
         if let timeObserver = timeObserver { player.removeTimeObserver(timeObserver); self.timeObserver = nil }
         if let endObserver = endObserver { NotificationCenter.default.removeObserver(endObserver); self.endObserver = nil }
         player.replaceCurrentItem(with: nil); currentEpisode = nil
-        try? AVAudioSession.sharedInstance().setActive(false,options: .notifyOthersOnDeactivation)
+        PlaybackAudioSession.release(audioOwner)
     }
 }
 
