@@ -61,6 +61,7 @@ static void *getGL(void *ctx,const char *name) { return dlsym(RTLD_DEFAULT,name)
     atomic_uint_fast64_t _frames;
     double _startPosition,_speed;
     NSString *_failure;
+    NSMutableArray<NSString *> *_audioLog;
     BOOL _loaded,_ended;
 }
 @end
@@ -81,7 +82,7 @@ static void *getGL(void *ctx,const char *name) { return dlsym(RTLD_DEFAULT,name)
 }
 - (instancetype)initWithSource:(id<HGMPVSource>)source {
     if ((self = [super initWithFrame:CGRectZero])) {
-        _source = source; _speed = 1;
+        _source = source; _speed = 1; _audioLog = [NSMutableArray array];
         atomic_init(&_stopping,false); atomic_init(&_renderQueued,false);
         atomic_init(&_needsFrame,true); atomic_init(&_frames,0);
         _controlQueue = dispatch_queue_create("com.hongguotv.mpv.control",DISPATCH_QUEUE_SERIAL);
@@ -130,6 +131,8 @@ static void *getGL(void *ctx,const char *name) { return dlsym(RTLD_DEFAULT,name)
         }
         int result = mpv_initialize(self->_mpv);
         if (result < 0) { [self fail:[NSString stringWithUTF8String:mpv_error_string(result)]]; return; }
+        // Keep audio-backend diagnostics without logging media URLs or keys.
+        mpv_request_log_messages(self->_mpv,"v");
         result = mpv_stream_cb_add_ro(self->_mpv,"hongguo",(__bridge void *)self->_source,openStream);
         if (result < 0) { [self fail:@"无法注册本机解密数据流"]; return; }
         dispatch_async(self->_renderQueue,^{ [self createRenderer]; });
@@ -269,10 +272,23 @@ static void updateRender(void *ctx) { [(__bridge HGMPVPlayer *)ctx markFrame]; }
     while (true) {
         mpv_event *event = mpv_wait_event(_mpv,0);
         if (!event || event->event_id == MPV_EVENT_NONE) break;
+        if (event->event_id == MPV_EVENT_LOG_MESSAGE) {
+            mpv_event_log_message *message = event->data;
+            NSString *prefix = [NSString stringWithUTF8String:message->prefix] ?: @"";
+            if ([prefix hasPrefix:@"ao"] || [prefix isEqualToString:@"audio"]) {
+                NSString *text = [NSString stringWithUTF8String:message->text] ?: @"";
+                if (![text containsString:@"://"]) {
+                    NSString *line = [NSString stringWithFormat:@"[%@] %@",prefix,text];
+                    [_audioLog addObject:line];
+                    if (_audioLog.count > 16) [_audioLog removeObjectAtIndex:0];
+                    NSLog(@"mpv audio: %@",line);
+                }
+            }
+        }
         if (event->event_id == MPV_EVENT_FILE_LOADED) _loaded = YES;
         if (event->event_id == MPV_EVENT_END_FILE) {
             mpv_event_end_file *end = event->data;
-            if (end->reason == MPV_END_FILE_REASON_ERROR) _failure = [NSString stringWithFormat:@"mpv: %s",mpv_error_string(end->error)];
+            if (end->reason == MPV_END_FILE_REASON_ERROR) _failure = [NSString stringWithFormat:@"mpv: %s\n%@",mpv_error_string(end->error),[_audioLog componentsJoinedByString:@"\n"]];
             if (end->reason == MPV_END_FILE_REASON_EOF) _ended = YES;
         }
     }
