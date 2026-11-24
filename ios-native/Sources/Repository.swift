@@ -72,7 +72,7 @@ actor DeviceSession {
         request.httpMethod = "POST"; request.httpBody = body
         request.allHTTPHeaderFields = ["User-Agent":Repository.appUA, "Content-Type":"application/octet-stream;tt-data=a", "log-encode-type":"gzip", "x-ss-dp":"8662", "x-ss-req-ticket":String(now), "x-vc-bdturing-sdk-version":"4.0.3.cn", "lc":"101", "sdk-version":"2", "passport-sdk-version":"5051452", "x-neptune":"-8|50:51:59:30:40:47:49:39", "x-ss-stub":Crypto.hash("md5",body).hex.uppercased()]
         request.httpShouldHandleCookies = false
-        let (data, response) = try await HTTP.shared.data(request)
+        let (data, response) = try await PlaybackTransport.data(request,limit: 2 * 1024 * 1024)
         guard let object = try JSONSerialization.jsonObject(with: data) as? JSON else { throw HGError.message("播放设备初始化失败") }
         let device = object.text("device_id_str").isEmpty ? object.text("device_id") : object.text("device_id_str")
         let install = object.text("install_id_str").isEmpty ? object.text("install_id") : object.text("install_id_str")
@@ -139,7 +139,11 @@ final class Repository {
         return Detail(series: Series(row), episodes: episodes)
     }
     func streams(_ id: String) async throws -> [Rendition] {
-        try await DramaPlayback.shared.streams(id)
+        let profile: DeviceSession.Profile
+        do { profile = try await device.profile() }
+        catch { if Task.isCancelled { throw CancellationError() }; throw PlaybackFailure(stage: "匿名设备注册",cause: error) }
+        do { return try await MobilePlayback.streams(id: id,device: profile.values,signer: signer) }
+        catch { if Task.isCancelled { throw CancellationError() }; throw PlaybackFailure(stage: "上游 0.16.14 播放接口",cause: error) }
     }
     static func jsonValue(_ value: Any?) -> JSON {
         if let object = value as? JSON { return object }

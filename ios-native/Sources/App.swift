@@ -221,9 +221,9 @@ struct SettingsScreen: View {
                     Button("清空观看记录",role: .destructive) { confirmClear = true }
                 }
                 Section("关于") {
-                    Text("红果 TV · iPad 原生版 0.16.13")
+                    Text("红果 TV · iPad 原生版 0.16.14")
                     Text("iOS 15.0 及以上 · SwiftUI / AVPlayer")
-                    Text("播放引擎：Drama SDI 会话 · build 7")
+                    Text("播放引擎：上游 0.16.14 · build 8")
                     Text("内容请求和视频处理均在本机执行，无需伴机服务。")
                     Link("源代码与许可证",destination: URL(string: "https://github.com/Blueanr/hongguoTV")!)
                     Text("个人非官方客户端，与红果官方无关联。接口变化可能影响使用。").font(.footnote).foregroundColor(.secondary)

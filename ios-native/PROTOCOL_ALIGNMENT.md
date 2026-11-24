@@ -1,4 +1,6 @@
-# 0.16.13 APK / iOS 播放接口核对
+# 上游 0.16.14 / iOS 播放接口核对
+
+build 8 已同步 `N3urda/hongguoTV` 主线 `ef328f3`，正式入口为原生移植的 `MobilePlayback`。关键更新：7.4.5.32 profile、reading.snssdk.com preload、level 2、Medusa F21=312、VOD codec 1/3 协商。下文为此前 0.16.13 的历史核对记录；当前签名以 `kotlin-tv/core/src/test/resources/signing-v5-playback-312.json` 的独立完整请求向量为准。
 
 > build 5 正式入口进一步替换为 hongguo-drama 的 SDI 会话协议移植，包含 token 初始化；见 README 当前播放引擎章节。build 3/4 的空响应结论属于当时的旧路径。
 

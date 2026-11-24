@@ -17,11 +17,16 @@ final class MobilePlaybackTests: XCTestCase {
         let signer = Signer()
         let post = try await MobilePlayback.request(id: episode,device: device,signer: signer)
         XCTAssertEqual(post.url?.host,MobilePlayback.primaryHost)
-        XCTAssertEqual(post.url?.path,"/novel/player/multi_video_model/player/v1")
+        XCTAssertEqual(post.url?.path,"/novel/player/multi_video_model/preload/v1")
         XCTAssertEqual(post.httpMethod,"POST")
         XCTAssertEqual(post.value(forHTTPHeaderField: "Content-Encoding"),"gzip")
         XCTAssertEqual(Array(try XCTUnwrap(post.httpBody).prefix(2)),[0x1f,0x8b])
         XCTAssertEqual(post.value(forHTTPHeaderField: "x-ss-stub"),Crypto.hash("md5",post.httpBody!).hex.uppercased())
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Crypto.inflate(post.httpBody!,window: 31)) as? JSON)
+        XCTAssertEqual(payload.text("dr_scene"),"preload")
+        XCTAssertEqual(payload.object("biz_param").number("device_level"),2)
+        XCTAssertEqual(payload.object("mixed_video_id_map")["1004"] as? [String],[episode])
+        XCTAssertEqual(post.value(forHTTPHeaderField: "User-Agent"),"okhttp/4.12.0")
         let get = try await MobilePlayback.request(id: episode,device: device,signer: signer,tab: true,host: MobilePlayback.alternateHost)
         XCTAssertEqual(get.httpMethod,"GET"); XCTAssertNil(get.httpBody)
         for request in [post,get] {
@@ -31,7 +36,10 @@ final class MobilePlaybackTests: XCTestCase {
             XCTAssertNil(request.value(forHTTPHeaderField: "x-gorgon"))
             for name in ["x-medusa","x-helios","x-khronos"] { XCTAssertFalse((request.value(forHTTPHeaderField: name) ?? "").isEmpty) }
             let query = Dictionary(uniqueKeysWithValues: URLComponents(url: request.url!,resolvingAgainstBaseURL: false)!.queryItems!.map { ($0.name,$0.value ?? "") })
-            XCTAssertEqual(query["version_name"],"7.4.3.32")
+            XCTAssertEqual(query["version_name"],"7.4.5.32")
+            XCTAssertEqual(query["manifest_version_code"],"74532")
+            XCTAssertEqual(query["device_type"],"25053RT47C")
+            XCTAssertEqual(query["channel"],"update_64")
             XCTAssertEqual(query["device_id"],device["device_id"])
             XCTAssertEqual(query["cdid"],device["cdid"])
         }
@@ -103,5 +111,39 @@ final class MobilePlaybackTests: XCTestCase {
         let raw = try JSONSerialization.data(withJSONObject: ["code":0,"data":["video_model_data":[episode:["video_model":"{\"video_list\":[]}"]]]])
         XCTAssertNotNil(try MobilePlayback.decode(raw,response: response(request),id: episode,tab: true)["video_list"])
         XCTAssertThrowsError(try MobilePlayback.decode(raw,response: response(request),id: "999",tab: true))
+    }
+    func testPreloadByteVC2NegotiatesH264ThenHEVCWithoutSessionHeaders() async throws {
+        var requests: [URLRequest] = []
+        let model: JSON = ["video_list":[["codec_type":"bytevc2","main_url":"https://example.org/unsupported.mp4"]],
+                           "fallback_api":["https://vod.example.org/model?signature=synthetic&codec_type=2"]]
+        let rows = try await MobilePlayback.streams(id: episode,device: device,signer: Signer()) { request in
+            requests.append(request)
+            let payload: JSON
+            if requests.count == 1 { payload = ["code":0,"data":["1004":[self.episode:["video_model":model]]]] }
+            else {
+                payload = ["video_info":["data":["video_list":[["codec_type":requests.count == 2 ? "bytevc2" : "hevc","main_url":"https://example.org/compatible.mp4","quality_desc":"720p"]]]]]
+                XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+                XCTAssertNil(request.value(forHTTPHeaderField: "x-medusa"))
+                XCTAssertNil(request.httpBody)
+                XCTAssertFalse(request.httpShouldHandleCookies)
+                let items = URLComponents(url: request.url!,resolvingAgainstBaseURL: false)!.queryItems!
+                XCTAssertEqual(items.filter { $0.name == "codec_type" }.map(\.value),[requests.count == 2 ? "1" : "3"])
+                XCTAssertEqual(items.first { $0.name == "signature" }?.value,"synthetic")
+            }
+            return (try JSONSerialization.data(withJSONObject: payload),self.response(request))
+        }
+        XCTAssertEqual(requests.map(\.httpMethod),["POST","GET","GET"])
+        XCTAssertEqual(rows.first?.quality,720)
+        XCTAssertTrue(rows.first?.codec.contains("hevc") == true)
+    }
+    func testFallbackShapesAndInvalidEndpoints() {
+        let endpoint = "https://vod.example.org/model?a=1&b=2"
+        let shapes: [Any] = [endpoint,[endpoint],["fallback_api":endpoint],"{\"fallback_api\":\"\(endpoint)\"}"]
+        for raw in shapes {
+            XCTAssertEqual(MobilePlayback.fallback(["fallback_api":raw])?.absoluteString,endpoint)
+        }
+        for endpoint in ["http://example.org/model","https://user:pass@example.org/model","file:///video.mp4",""] {
+            XCTAssertNil(MobilePlayback.fallback(["fallback_api":endpoint]))
+        }
     }
 }

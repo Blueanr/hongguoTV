@@ -184,7 +184,7 @@ function v5Medusa(queryHash, bodyHash, ts, who, random, nonce, started) {
     [8,'v04.10.03-ml-android'],[9,0x040a0300,'sint'],[10,flags,'bytes'],[12,ts,'sint'],
     [13,f13,'bytes'],[14,queryHash.subarray(0,6),'bytes'],
     [15,proto([[1,1,'sint'],[2,1,'sint'],[3,1,'sint'],[5,1,'sint']]),'message'],
-    [17,ts,'sint'],[20,'none'],[21,377,'sint'],[23,env,'message'],
+    [17,ts,'sint'],[20,'none'],[21,312,'sint'],[23,env,'message'],
     [24,'{"cmr":16777216,"cmr2":16777216,"un_h":11,"vpn":0,"kd":0,"dyn":"","do":1,"tk":true}'],
   ]);
   const r = Math.floor(random() * 0x100000000), [hash, seed] = keyHash(V5_KEY, r);

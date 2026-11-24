@@ -5,7 +5,7 @@ import AVFoundation
 
 // Explicit opt-in: real anonymous registration and network requests, no account.
 final class LivePlaybackTests: XCTestCase {
-    func testProductionDramaPlaybackModels() async throws {
+    func testProductionUpstreamPlaybackModels() async throws {
         guard ProcessInfo.processInfo.environment["HONGGUO_LIVE_PLAYBACK"] == "1" else {
             throw XCTSkip("Set HONGGUO_LIVE_PLAYBACK=1 for real-network playback checks")
         }
@@ -24,7 +24,7 @@ final class LivePlaybackTests: XCTestCase {
             XCTAssertEqual(response.statusCode,206)
             XCTAssertGreaterThanOrEqual(bytes.count,8)
             XCTAssertEqual(String(decoding: bytes.dropFirst(4).prefix(4),as: UTF8.self),"ftyp")
-            print("Drama SDI live episode index \(index): \(rows.count) renditions, MP4 Range OK")
+            print("Upstream 0.16.14 live episode index \(index): \(rows.count) renditions, MP4 Range OK")
             if index == 0 {
                 // Match PlayerModel's default 720P choice, rather than testing
                 // only the highest-quality stream returned by the endpoint.

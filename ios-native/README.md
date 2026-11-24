@@ -26,7 +26,19 @@
 
 最低部署版本和编译成功不等于 iOS 15 实机验收；账号接口、媒体服务和 CDN 的可用性仍受上游影响。
 
-## 当前播放引擎：Drama SDI 会话（build 5）
+## 当前播放引擎：上游 0.16.14（build 8）
+
+已合并 `N3urda/hongguoTV` 最新主线 `ef328f3a3dc28479d90608a507996136672cf946`（2026-11-23，0.16.14），将正式 iOS 播放入口切换为该版本 `MobilePlayback` 协议：
+
+- 本机注册匿名设备，沿用上游 `log5-applog-lf.fqnovel.com` 注册流程。
+- `reading.snssdk.com/novel/player/multi_video_model/preload/v1`，应用参数 `7.4.5.32`、`device_level=2`、`dr_scene=preload`。
+- v5 Medusa 字段 21 更新为 `312`，与上游独立合成向量逐字节对照。
+- 没有兼容资源时使用模型提供的 `fallback_api`，按 `codec_type=1`、`3` 协商 H.264/HEVC；保留精确分集匹配和有界空响应回退。
+- 请求在 iPad 本机签名并通过有大小限制、支持取消的 URLSessionDataTask 传输。当前播放路径不需要 SDI 初始化资料下载。
+
+本次本地签名验证已通过；原生构建、实际联网取源及 AVPlayer 播放／拖动由云端测试验证。iOS 15.0.2 实机仍需覆盖安装确认。
+
+## 历史：Drama SDI 会话（build 5–7）
 
 build 7：针对 iOS 15.0.2 实机在“匿名设备注册”阶段报 URL -1000，注册、会话和模型 POST 改用传统 URLSessionDataTask 委托传输，避开 AsyncBytes POST 路径；保持原始签名地址、请求头和请求体，保留取消、响应大小限制和禁止重定向。此为兼容性修复尝试，尚需该实机确认，不能仅凭新系统模拟器通过认定根因。
 
