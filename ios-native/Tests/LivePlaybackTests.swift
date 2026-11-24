@@ -36,6 +36,7 @@ final class LivePlaybackTests: XCTestCase {
     @MainActor private func verifyPlayer(_ row: Rendition) async throws {
         let resource = MediaResource(row)
         let item = AVPlayerItem(asset: resource.asset())
+        PlaybackTuning.apply(item,rate: 1)
         let player = AVPlayer(playerItem: item)
         defer { player.pause(); player.replaceCurrentItem(with: nil); resource.cancel() }
         player.play()
@@ -59,6 +60,28 @@ final class LivePlaybackTests: XCTestCase {
                 XCTAssertNotEqual(item.status,.failed,resource.diagnostic)
                 XCTAssertGreaterThanOrEqual(player.currentTime().seconds,target + 0.5)
                 print("AVPlayer default \(row.quality)P ready, clock advanced, seek and resume passed; \(resource.diagnostic)")
+                for rate in [Float(3),Float(4)] {
+                    player.pause()
+                    _ = await player.seek(to: CMTime(seconds: 1,preferredTimescale: 600),toleranceBefore: .zero,toleranceAfter: .zero)
+                    PlaybackTuning.apply(item,rate: rate)
+                    player.rate = rate
+                    let warmup = ProcessInfo.processInfo.systemUptime + 15
+                    while player.timeControlStatus != .playing && item.status != .failed && ProcessInfo.processInfo.systemUptime < warmup {
+                        try await Task.sleep(nanoseconds: 100_000_000)
+                    }
+                    XCTAssertEqual(player.timeControlStatus,.playing)
+                    let wallStart = ProcessInfo.processInfo.systemUptime,mediaStart = player.currentTime().seconds
+                    var waiting = 0
+                    for _ in 0..<30 {
+                        try await Task.sleep(nanoseconds: 100_000_000)
+                        if player.timeControlStatus == .waitingToPlayAtSpecifiedRate { waiting += 1 }
+                    }
+                    let elapsed = ProcessInfo.processInfo.systemUptime - wallStart
+                    let advanced = player.currentTime().seconds - mediaStart
+                    XCTAssertNotEqual(item.status,.failed,resource.diagnostic)
+                    XCTAssertGreaterThan(advanced,elapsed * Double(rate) * 0.75,"High-rate clock throughput")
+                    print("AVPlayer \(rate)x: advanced \(advanced)s in \(elapsed)s; waiting samples \(waiting)/30; fast-forward capability \(item.canPlayFastForward)")
+                }
                 return
             }
             try await Task.sleep(nanoseconds: 100_000_000)

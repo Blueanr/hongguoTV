@@ -68,6 +68,7 @@ import AVKit
                 guard let selected = streams.first(where: { $0.quality <= quality && $0.quality > 0 }) ?? streams.last else { throw HGError.message("没有兼容的播放资源") }
                 let source = MediaResource(selected); resource = source
                 let item = AVPlayerItem(asset: source.asset())
+                PlaybackTuning.apply(item,rate: rate)
                 currentEpisode = newIndex
                 statusObserver = item.observe(\.status,options: [.initial,.new]) { [weak self] item,_ in
                     Task { @MainActor in
@@ -75,7 +76,7 @@ import AVKit
                         if item.status == .failed {
                             self.loading = false
                             let reason = item.error.map { PlaybackFailure.describe($0) } ?? "未知错误"
-                            self.error = "播放器：\(reason)\n\(source.diagnostic)\n\(selected.quality)P · \(selected.codec) · iOS \(UIDevice.current.systemVersion) · build 8"
+                            self.error = "播放器：\(reason)\n\(source.diagnostic)\n\(selected.quality)P · \(selected.codec) · iOS \(UIDevice.current.systemVersion) · build 9"
                         }
                         if item.status == .readyToPlay { self.loading = false }
                     }
@@ -90,9 +91,10 @@ import AVKit
                 player.replaceCurrentItem(with: item)
                 if position > 0 { await player.seek(to: CMTime(seconds: position,preferredTimescale: 600)) }
                 try Task.checkCancellation()
-                player.playImmediately(atRate: rate)
+                player.automaticallyWaitsToMinimizeStalling = true
+                player.rate = rate
             } catch is CancellationError { }
-            catch { if generation == id { self.error = PlaybackFailure.describe(error) + "\niOS \(UIDevice.current.systemVersion) · build 8"; loading = false } }
+            catch { if generation == id { self.error = PlaybackFailure.describe(error) + "\niOS \(UIDevice.current.systemVersion) · build 9"; loading = false } }
         }
     }
     func save(completed: Bool = false) {
@@ -111,6 +113,7 @@ import AVKit
         guard PlaybackSpeed.valid(value) else { return }
         rate = (value * 100).rounded() / 100
         defaults.set(rate,forKey: PlaybackSpeed.key)
+        if let item = player.currentItem { PlaybackTuning.apply(item,rate: rate) }
         if #available(iOS 16.0, *) { player.defaultRate = rate }
         if player.rate > 0 { player.rate = rate }
     }

@@ -121,7 +121,14 @@ struct MP4Index {
     func decrypt(_ data: Data, start: Int, key: Data?) throws -> Data {
         var out = data; let end = start + data.count
         if let key = key {
-            for sample in samples {
+            // Samples are sorted and non-overlapping. Seek straight to the
+            // first intersection instead of rescanning the episode each chunk.
+            var low = 0, high = samples.count
+            while low < high {
+                let middle = (low + high) / 2
+                if samples[middle].end <= start { low = middle + 1 } else { high = middle }
+            }
+            for sample in samples[low...] {
                 if sample.start >= end { break }
                 if sample.end <= start { continue }
                 let lower = max(start,sample.start), upper = min(end,sample.end)
@@ -147,15 +154,22 @@ struct MP4Index {
 actor MediaBytes {
     let rendition: Rendition
     private var prepared: (MP4Index,Int)?
-    init(_ rendition: Rendition) { self.rendition = rendition }
+    private let fetch: (URLRequest,Int) async throws -> (Data,HTTPURLResponse)
+    static let blockSize = 2 * 1024 * 1024
+    private var blocks: [Int:Data] = [:]
+    private var recent: [Int] = []
+    init(_ rendition: Rendition,fetch: @escaping (URLRequest,Int) async throws -> (Data,HTTPURLResponse) = { try await MediaTransport.shared.data($0,limit: $1) }) {
+        self.rendition = rendition; self.fetch = fetch
+    }
     private func remote(_ start: Int, _ end: Int) async throws -> (Data,Int) {
         var request = URLRequest(url: rendition.url)
         request.setValue("bytes=\(start)-\(end)",forHTTPHeaderField: "Range")
         request.setValue(Repository.appUA,forHTTPHeaderField: "User-Agent")
-        let (bytes,response) = try await HTTP.shared.data(request,limit: end - start + 1)
+        request.setValue("identity",forHTTPHeaderField: "Accept-Encoding")
+        let (bytes,response) = try await fetch(request,end - start + 1)
         guard response.statusCode == 206, let range = response.value(forHTTPHeaderField: "Content-Range"),
               let total = Int(range.split(separator: "/").last ?? ""),
-              range.hasPrefix("bytes \(start)-"), total > end, bytes.count == end - start + 1 else { throw HGError.message("视频服务器未返回有效分段") }
+              range == "bytes \(start)-\(end)/\(total)", total > end, bytes.count == end - start + 1 else { throw HGError.message("视频服务器未返回有效分段") }
         return (bytes,total)
     }
     func prepare() async throws -> (MP4Index,Int) {
@@ -171,8 +185,28 @@ actor MediaBytes {
     func read(_ start: Int, _ end: Int) async throws -> Data {
         let (index,total) = try await prepare()
         guard start >= 0, start <= end, end < total else { throw HGError.message("播放请求越界") }
-        let (data,_) = try await remote(start,end)
-        return try index.decrypt(data,start: start,key: rendition.key)
+        // AVFoundation repeats and overlaps small ranges. Cache two decrypted
+        // 2 MiB blocks (4 MiB maximum), including requests that cross a boundary.
+        var result = Data(), position = start
+        while position <= end {
+            try Task.checkCancellation()
+            let base = position / Self.blockSize * Self.blockSize
+            let data: Data
+            if let cached = blocks[base] { data = cached }
+            else {
+                let (raw,size) = try await remote(base,min(total - 1,base + Self.blockSize - 1))
+                try Task.checkCancellation()
+                guard size == total else { throw HGError.message("视频文件大小发生变化") }
+                data = try index.decrypt(raw,start: base,key: rendition.key)
+                blocks[base] = data
+            }
+            recent.removeAll { $0 == base }; recent.append(base)
+            while recent.count > 2 { blocks.removeValue(forKey: recent.removeFirst()) }
+            let upper = min(end + 1,base + data.count)
+            result.append(data[(position - base)..<(upper - base)])
+            position = upper
+        }
+        return result
     }
 }
 
