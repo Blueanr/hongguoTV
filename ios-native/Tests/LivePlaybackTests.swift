@@ -32,7 +32,30 @@ final class LivePlaybackTests: XCTestCase {
         let detail = try await repository.detail(series.id)
         let indices = Set([0,min(53,detail.episodes.count - 1),detail.episodes.count - 1]).sorted()
         for index in indices {
-            let rows = try await liveStreams(repository,episode: detail.episodes[index],index: index)
+            let rows: [Rendition]
+            do {
+                rows = try await liveStreams(repository,episode: detail.episodes[index],index: index)
+            } catch {
+                if let failure = error as? PlaybackFailure,
+                   let cause = failure.cause as? HGError,
+                   case .message(let message) = cause,
+                   message == "播放接口暂时返回空响应，请稍后重试" {
+                    // Diagnose whether the failure is specific to the catalog's
+                    // first title. These probes never turn a failed test green.
+                    for (offset,candidate) in catalog.items.dropFirst().prefix(2).enumerated() {
+                        do {
+                            let probe = try await repository.detail(candidate.id)
+                            let episode = try XCTUnwrap(probe.episodes.first)
+                            let alternatives = try await repository.streams(episode)
+                            print("Empty-source diagnostic catalog candidate \(offset + 2): \(alternatives.count) renditions")
+                        } catch {
+                            try Task.checkCancellation()
+                            print("Empty-source diagnostic catalog candidate \(offset + 2): \(PlaybackFailure.describe(error))")
+                        }
+                    }
+                }
+                throw error
+            }
             XCTAssertFalse(rows.isEmpty)
             let row = try XCTUnwrap(rows.first)
             var request = URLRequest(url: row.url)

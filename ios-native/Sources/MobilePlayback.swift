@@ -64,7 +64,12 @@ enum MobilePlayback {
             let remaining = deadline - ProcessInfo.processInfo.systemUptime
             guard remaining > 0 else { throw HGError.message("播放请求超时，请重试") }
             request.timeoutInterval = remaining
+            let started = ProcessInfo.processInfo.systemUptime
             let (bytes,response) = try await fetch(request)
+#if DEBUG
+            // Transport facts only: never emit signed URLs, IDs, cookies or bodies.
+            print("Playback model \(tab ? "GET" : "POST") \(host): HTTP \(response.statusCode), \(bytes.count) bytes, \(Int((ProcessInfo.processInfo.systemUptime - started) * 1000)) ms")
+#endif
             try Task.checkCancellation()
             guard ProcessInfo.processInfo.systemUptime < deadline else { throw HGError.message("播放请求超时，请重试") }
             return try decode(bytes,response: response,id: id,tab: tab)
