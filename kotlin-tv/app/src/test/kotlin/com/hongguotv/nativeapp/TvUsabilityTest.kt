@@ -15,6 +15,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowLooper
 
 @RunWith(RobolectricTestRunner::class)
@@ -212,7 +213,7 @@ class TvUsabilityTest {
 
     @Test
     fun settingsSeparatesAccountDataAndUpdatesWithValidFocusLinks() {
-        val controller = Robolectric.buildActivity(MainActivity::class.java).create()
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         val activity = controller.get()
         try {
             val library = get(activity, "library") as Library
@@ -230,23 +231,35 @@ class TvUsabilityTest {
             root.measure(View.MeasureSpec.makeMeasureSpec(960, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(540, View.MeasureSpec.EXACTLY))
             root.layout(0, 0, 960, 540)
+            assertEquals("检查更新", (root.findFocus() as TextView).text.toString())
+            root.findViewWithTag<View>("settings-category-1").performClick()
             val quality = texts(root).first { it.text.toString().startsWith("默认清晰度") }
             assertTrue(quality.hasFocus())
             val card = quality.parent as View
             assertEquals(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, card.layoutParams.height)
             val rows = texts(root)
-            listOf("播放", "外观与操作", "账户", "应用与更新").forEach { title ->
+            listOf("检查更新", "播放", "外观与操作", "账户", "关于应用").forEach { title ->
                 assertTrue(rows.any { it.text == title })
             }
-            val appearance = root.findViewWithTag<View>("settings-category-1")
+            val danmaku = rows.single { it.text == "弹幕设置" }
+            assertTrue(danmaku.requestFocus())
+            danmaku.performClick()
+            val dialog = ShadowDialog.getLatestDialog()
+            val options = texts(dialog.window!!.decorView)
+            options.single { it.text == "弹幕：开" }.performClick()
+            assertFalse(activity.getSharedPreferences("social", 0).getBoolean("enabled", true))
+            options.single { it.text == "关闭" }.performClick()
+            ShadowLooper.idleMainLooper()
+            assertTrue(danmaku.hasFocus())
+            val appearance = root.findViewWithTag<View>("settings-category-2")
             appearance.requestFocus()
             appearance.performClick()
             val startup = texts(root).first { it.text.toString().startsWith("启动页面") }
-            assertTrue(startup.hasFocus())
+            assertTrue(texts(root).first { it.text.toString().startsWith("界面主题") }.hasFocus())
             assertEquals(appearance.id, startup.nextFocusLeftId)
             val clock = texts(root).first { it.text.toString().startsWith("播放时钟") }
             clock.requestFocus()
-            root.findViewWithTag<View>("settings-category-0").requestFocus()
+            root.findViewWithTag<View>("settings-category-1").requestFocus()
             assertTrue(texts(root).any { it.text.toString().startsWith("默认清晰度") })
             appearance.requestFocus()
             appearance.performClick()
@@ -263,15 +276,15 @@ class TvUsabilityTest {
             assertEquals(!previous, library.homeAutoplay)
             assertEquals(!previous, preview.isChecked)
             assertFalse(preview.isFocusable)
-            root.findViewWithTag<View>("settings-category-2").requestFocus()
-            val account = texts(root).first { it.text == "登录与账户管理" }
-            assertEquals(root.findViewWithTag<View>("settings-category-2").id, account.nextFocusLeftId)
-            assertFalse(texts(root).any { it.text.toString().startsWith("版本与更新") })
             root.findViewWithTag<View>("settings-category-3").requestFocus()
-            assertTrue(texts(root).any { it.text.toString().startsWith("版本与更新") })
+            val account = texts(root).first { it.text == "登录与账户管理" }
+            assertEquals(root.findViewWithTag<View>("settings-category-3").id, account.nextFocusLeftId)
+            assertFalse(texts(root).any { it.text.toString().startsWith("版本与更新") })
+            root.findViewWithTag<View>("settings-category-4").requestFocus()
+            assertTrue(texts(root).any { it.text == "关于hongguoTV" })
             assertFalse(texts(root).any { it.text == "登录与账户管理" })
         } finally {
-            controller.destroy()
+            controller.pause().stop().destroy()
         }
     }
 }

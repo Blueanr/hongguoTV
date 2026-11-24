@@ -38,7 +38,7 @@ class TvTools(private val activity: Activity) {
         TextView(activity).apply {
             text = value
             textSize = size
-            setTextColor(Color.WHITE)
+            setTextColor(TvStyle.text)
             setPadding(dp(8), dp(4), dp(8), dp(4))
         }
 
@@ -64,6 +64,20 @@ class TvTools(private val activity: Activity) {
             }
         }
         next.show()
+        // Framework dialog labels otherwise retain the fixed dark XML theme.
+        next.findViewById<TextView>(android.R.id.message)?.setTextColor(TvStyle.text)
+        val titleId = activity.resources.getIdentifier("alertTitle", "id", "android")
+        if (titleId != 0) next.findViewById<TextView>(titleId)?.setTextColor(TvStyle.text)
+        listOf(AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL)
+            .forEach { which ->
+                next.getButton(which)?.apply {
+                    setTextColor(TvStyle.text)
+                    backgroundTintList = android.content.res.ColorStateList(
+                        arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()),
+                        intArrayOf(TvStyle.raised, TvStyle.surface),
+                    )
+                }
+            }
         next.window?.setBackgroundDrawable(TvVisual.panel(activity, modal = true))
         next.window?.setDimAmount(.6f)
     }
@@ -117,6 +131,7 @@ class TvTools(private val activity: Activity) {
         selected: Int = -1,
         covers: List<String> = emptyList(),
         loadCover: (ImageView, String) -> Unit = { _, _ -> },
+        onBack: (() -> Unit)? = null,
         onExtra: () -> Unit = {},
     ) {
         require(labels.isNotEmpty())
@@ -193,6 +208,12 @@ class TvTools(private val activity: Activity) {
         next = AlertDialog.Builder(activity).create()
         next.setView(content, 0, 0, 0, 0)
         open(next, anchor)
+        if (onBack != null) next.setOnKeyListener { _, key, event ->
+            if (key == KeyEvent.KEYCODE_BACK) {
+                if (event.action == KeyEvent.ACTION_UP) { next.dismiss(); main.post { onBack() } }
+                true
+            } else false
+        }
         next.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
         next.window?.setDimAmount(.6f)
         val width = minOf(dp(if (compact) 440 else 480), (activity.resources.displayMetrics.widthPixels * .82f).toInt())
@@ -316,11 +337,12 @@ class TvTools(private val activity: Activity) {
                         Button(activity).apply {
                             id = View.generateViewId()
                             text = key
+                            setTextColor(TvStyle.text)
                             minHeight = dp(42)
                             backgroundTintList =
                                 android.content.res.ColorStateList(
                                     arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()),
-                                    intArrayOf(TvStyle.accent, TvStyle.surface),
+                                    intArrayOf(TvStyle.raised, TvStyle.surface),
                                 )
                             setOnClickListener {
                                 when (key) {

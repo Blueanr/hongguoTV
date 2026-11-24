@@ -63,7 +63,7 @@ internal class CatalogShell(context: Context, private val phone: (View) -> Unit 
                 paint()
             }
             buttons += button
-            rail.addView(button, LayoutParams(-1, dp(if (compact) 30 else 42)).apply { bottomMargin = dp(if (compact) 3 else 8) })
+            rail.addView(button, LayoutParams(-1, dp(if (compact) 28 else 38)).apply { bottomMargin = dp(if (compact) 2 else 6) })
         }
         addView(rail, LayoutParams(dp(112), -1))
         body.setPadding(dp(24), dp(18), dp(24), dp(16))
@@ -126,16 +126,19 @@ internal class CatalogShell(context: Context, private val phone: (View) -> Unit 
             }
             return true
         }
-        // The rail is beside the page: vertical movement must never escape into it.
-        // Keep GridView's own row traversal before applying the boundary check below.
+        // Resolve vertical movement inside the content first, independent of the rail's
+        // geometry and stale nextFocus IDs. At the top, provide a direct route home.
         val vertical = event.keyCode == KeyEvent.KEYCODE_DPAD_UP || event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
         if (event.action == KeyEvent.ACTION_DOWN && vertical && inContent(focused) &&
             focused !is android.widget.AbsListView) {
             val direction = if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP) FOCUS_UP else FOCUS_DOWN
             val next = focused?.focusSearch(direction)
-            if (next != null && !inContent(next)) {
-                android.view.FocusFinder.getInstance().findNextFocus(body, focused, direction)
-                    ?.takeIf { inContent(it) }?.requestFocus()
+            if (next == null || next === focused || !inContent(next)) {
+                val contentTarget = android.view.FocusFinder.getInstance()
+                    .findNextFocus(body, focused, direction)
+                    ?.takeIf { it !== focused && inContent(it) }
+                if (contentTarget != null) contentTarget.requestFocus()
+                else if (direction == FOCUS_UP) navigation[selectedDestination].requestFocus()
                 return true
             }
         }

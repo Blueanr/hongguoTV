@@ -25,12 +25,16 @@ class PlaybackDeviceSession(
         // Registration has no account cookies. Cancellation belongs to the requesting work scope.
         val transport = http.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
         RequestScope.execute(transport.newCall(request.build())) { response ->
-            DeviceRegister.parse(cloudResponse(response), response.headers("Set-Cookie"))
+            val text = try { cloudResponse(response) } catch (_: EmptyAccountResponseException) {
+                throw EmptyPlaybackResponseException("stage=register")
+            }
+            DeviceRegister.parse(text, response.headers("Set-Cookie"))
         }
     }
 ) {
     companion object {
         val shared = PlaybackDeviceSession()
+        private const val EMPTY_MODEL_PREFETCH_PAUSE_MILLIS = 5_000L
     }
 
     internal data class Profile(
@@ -42,6 +46,15 @@ class PlaybackDeviceSession(
         private var recommendationSigner: Signer? = null
         private data class Model(val entry: org.json.JSONObject, val owner: Any, val savedAt: Long)
         private val models = linkedMapOf<String, Model>()
+        // Background prefetch reads only the primary model endpoint.
+        @Volatile private var emptyPrimaryModelAt: Long? = null
+
+        fun recordEmptyPrimaryModel(now: Long) { emptyPrimaryModelAt = now }
+
+        fun recordPlayablePrimaryModel() { emptyPrimaryModelAt = null }
+
+        fun shouldDeferPlaybackPrefetch(now: Long): Boolean =
+            emptyPrimaryModelAt?.let { now - it in 0 until EMPTY_MODEL_PREFETCH_PAUSE_MILLIS } == true
 
         // 首页进入全集可一次性交接刚取得的模型；同仓库主动重试始终重新读取，不复用旧地址。
         @Synchronized
@@ -73,7 +86,7 @@ class PlaybackDeviceSession(
     }
 
     private var cdid = UUID.randomUUID().toString()
-    private var ready: Profile? = null
+    @Volatile private var ready: Profile? = null
 
     @Synchronized
     internal fun profile(http: OkHttpClient): Profile {
@@ -83,6 +96,12 @@ class PlaybackDeviceSession(
         if (Thread.currentThread().isInterrupted) throw InterruptedIOException("播放请求已取消")
         return toProfile(registerDevice(http)).also { ready = it }
     }
+
+    internal fun shouldDeferPlaybackPrefetch(now: Long): Boolean =
+        ready?.shouldDeferPlaybackPrefetch(now) == true
+
+    @Synchronized
+    internal fun existing(): Profile? = ready
 
     @Synchronized
     internal fun takeModel(id: String, owner: Any, now: Long) = ready?.takeModel(id, owner, now)
