@@ -31,7 +31,6 @@ final class LivePlaybackTests: XCTestCase {
                 // Match PlayerModel's default 720P choice, rather than testing
                 // only the highest-quality stream returned by the endpoint.
                 let selected = try XCTUnwrap(rows.first(where: { $0.quality <= 720 && $0.quality > 0 }) ?? rows.last)
-                try await verifyPlayer(selected)
                 try await verifyReentry(selected)
             }
         }
@@ -100,39 +99,60 @@ final class LivePlaybackTests: XCTestCase {
             let model = PlayerModel(detail: detail,index: 0,position: 0,library: Library(),defaults: defaults,resolve: { _ in [row] })
             defer { model.stop() }
             if pass == 1 { XCTAssertEqual(model.rate,3,"Restore speed on fresh player") }
+            // Exercise the actual libmpv render API in a visible UIView. Simulator
+            // uses software rendering; device uses OpenGL ES + automatic hwdec.
+            let window = UIWindow(frame: CGRect(x: 0,y: 0,width: 640,height: 360))
+            let controller = UIViewController(); window.rootViewController = controller
+            window.makeKeyAndVisible()
+            defer { window.isHidden = true }
             model.start()
             let deadline = ProcessInfo.processInfo.systemUptime + 45
-            while (model.loading || model.player.currentItem == nil) && model.error == nil && ProcessInfo.processInfo.systemUptime < deadline {
+            var attached = false
+            while (model.loading || !attached || model.position < 0.25) && model.error == nil && ProcessInfo.processInfo.systemUptime < deadline {
+                if let player = model.player,!attached {
+                    player.frame = controller.view.bounds
+                    controller.view.addSubview(player); player.setNeedsLayout(); player.layoutIfNeeded()
+                    attached = true
+                }
                 try await Task.sleep(nanoseconds: 100_000_000)
             }
             XCTAssertNil(model.error)
             XCTAssertFalse(model.loading)
-            let item = try XCTUnwrap(model.player.currentItem)
-            XCTAssertEqual(item.audioTimePitchAlgorithm,.spectral)
-            XCTAssertTrue(item.tracks.contains { $0.isEnabled && $0.assetTrack?.mediaType == .audio },"Enabled audio track after startup")
-            let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String:kCVPixelFormatType_32BGRA])
-            item.add(output)
+            XCTAssertNotNil(model.player)
+            XCTAssertGreaterThan(model.duration,0)
             model.setRate(3)
             let warmup = ProcessInfo.processInfo.systemUptime + 15
-            while (model.loading || model.player.timeControlStatus != .playing) && ProcessInfo.processInfo.systemUptime < warmup {
+            while (model.loading || (model.playbackState["speed"] as? Double != 3)) && ProcessInfo.processInfo.systemUptime < warmup {
                 try await Task.sleep(nanoseconds: 100_000_000)
             }
-            var frames = 0
-            let mediaStart = model.player.currentTime().seconds
+            let firstFrames = (model.playbackState["frames"] as? NSNumber)?.intValue ?? 0
+            let mediaStart = model.position
             for _ in 0..<90 {
-                let time = output.itemTime(forHostTime: CACurrentMediaTime())
-                if output.hasNewPixelBuffer(forItemTime: time), output.copyPixelBuffer(forItemTime: time,itemTimeForDisplay: nil) != nil { frames += 1 }
                 try await Task.sleep(nanoseconds: 33_000_000)
             }
+            let frames = ((model.playbackState["frames"] as? NSNumber)?.intValue ?? 0) - firstFrames
             XCTAssertGreaterThan(frames,15,"Decoded video frames, not just an advancing clock")
-            XCTAssertGreaterThan(model.player.currentTime().seconds - mediaStart,6)
-            XCTAssertEqual(item.audioTimePitchAlgorithm,.spectral)
-            XCTAssertFalse(model.player.isMuted)
-            XCTAssertGreaterThan(model.player.volume,0)
-            XCTAssertTrue(item.tracks.contains { $0.isEnabled && $0.assetTrack?.mediaType == .audio })
-            print("Production 3x reentry pass \(pass + 1): \(frames) decoded frames / 90 samples, audio track enabled; speaker output still requires device validation")
-            model.player.pause(); model.setRate(3)
-            XCTAssertEqual(model.player.rate,0)
+            XCTAssertGreaterThan(model.position - mediaStart,6)
+            XCTAssertEqual(model.playbackState["pitchCorrection"] as? Bool,true)
+            XCTAssertFalse((model.playbackState["audio"] as? String ?? "").isEmpty)
+            XCTAssertFalse((model.playbackState["audioOutput"] as? String ?? "").isEmpty)
+            XCTAssertNil(model.error)
+            print("libmpv 3x reentry pass \(pass + 1): \(frames) rendered frames, state \(model.playbackState); device speaker output requires validation")
+            model.setPaused(true); model.setRate(4)
+            try await Task.sleep(nanoseconds: 500_000_000)
+            XCTAssertTrue(model.paused)
+            XCTAssertEqual(model.playbackState["speed"] as? Double,4)
+            let pausedPosition = model.position
+            try await Task.sleep(nanoseconds: 500_000_000)
+            XCTAssertEqual(model.position,pausedPosition,accuracy: 0.1)
+            model.seek(1)
+            try await Task.sleep(nanoseconds: 500_000_000)
+            model.setPaused(false)
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            XCTAssertGreaterThan(model.position,5,"Seek and resume at 4x")
+            XCTAssertNil(model.error)
+            model.setRate(3)
+            model.player?.removeFromSuperview()
             model.stop()
         }
     }

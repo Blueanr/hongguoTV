@@ -10,6 +10,7 @@ npm --prefix ios-native/tooling ci --no-audit --no-fund
 npm --prefix ios-native/tooling run build
 npm --prefix ios-native/tooling test
 python3 scripts/ios-icons.py
+python3 scripts/ios-mpv.py
 xcodegen generate --spec ios-native/project.yml
 xcodebuild -project ios-native/HongguoPad.xcodeproj -scheme HongguoPad \
   -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
@@ -19,9 +20,13 @@ for resource in signer.js Assets.car LICENSE.txt NOTICE.txt Buffer-LICENSE.txt K
   test -s "$APP/$resource" || { echo "Missing app resource: $resource" >&2; exit 1; }
 done
 # TrollStore replaces this ad-hoc signature at install time; no private entitlements are requested.
+for framework in "$APP"/Frameworks/*.framework; do
+  codesign --force --sign - --timestamp=none "$framework"
+done
 codesign --force --sign - --timestamp=none --entitlements ios-native/TrollStore.entitlements "$APP"
 codesign --verify --deep --strict "$APP"
 mkdir -p outputs/ios/Payload
+rm -rf outputs/ios/Payload/HongguoPad.app
 ditto "$APP" outputs/ios/Payload/HongguoPad.app
 (cd outputs/ios && /usr/bin/zip -qry HongguoTV-iOS15-TrollStore.ipa Payload)
 shasum -a 256 outputs/ios/HongguoTV-iOS15-TrollStore.ipa > outputs/ios/SHA256SUMS.txt

@@ -1,4 +1,6 @@
 name: HongguoPad
+include:
+  - mpv-dependencies.yml
 options:
   deploymentTarget:
     iOS: '15.0'
@@ -10,7 +12,7 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: '15.0'
     CODE_SIGNING_ALLOWED: NO
     MARKETING_VERSION: '0.16.14'
-    CURRENT_PROJECT_VERSION: '10'
+    CURRENT_PROJECT_VERSION: '11'
 packages:
   Openhongguo:
     url: https://github.com/beilunyang/openhongguo.git
@@ -28,9 +30,14 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hongguotv.ipad
         INFOPLIST_FILE: Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/MPV/HongguoPad-Bridging-Header.h
+        CLANG_ENABLE_OBJC_ARC: YES
+        LD_RUNPATH_SEARCH_PATHS: '$(inherited) @executable_path/Frameworks'
     dependencies:
       - package: Openhongguo
       - sdk: AVKit.framework
+      - sdk: OpenGLES.framework
+      - sdk: QuartzCore.framework
       - sdk: JavaScriptCore.framework
       - sdk: libz.tbd
   HongguoPadTests:

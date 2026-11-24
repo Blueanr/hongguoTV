@@ -13,6 +13,7 @@
 - 打包依赖 `buffer` 6.0.3：MIT，版权 Feross Aboukhadijeh 及贡献者。其许可证随构建安装的 `node_modules/buffer/LICENSE` 提供，并复制进应用资源。
 - `esbuild` 为构建工具（MIT），不作为设备运行时嵌入。
 - SwiftUI、AVFoundation、JavaScriptCore、CommonCrypto、Security 和 zlib 使用系统 SDK。
+- build 11 使用原生 libmpv 0.39.0 与其 FFmpeg 等依赖，二进制来源及对应构建源码：https://github.com/gungun974/melodink-libmpv-darwin-build/tree/v0.39.0 。下载固定 SHA-256，设备和模拟器框架随 IPA 分发。倍速与渲染接入参考 PiliPlus `217fb54`、media-kit `73771ec` 的架构，详见 `docs/piliplus-ios-playback.md`；本项目直接调用 libmpv C API，不包含 Flutter。mpv 源码与许可：https://github.com/mpv-player/mpv/tree/v0.39.0 ，FFmpeg：https://ffmpeg.org/legal.html 。
 - 应用图标复用本仓库 `assets/brand/logo-pixel.png`。
 
 红果名称及内容相关权利归对应权利人。本客户端与红果官方无隶属或授权关系。

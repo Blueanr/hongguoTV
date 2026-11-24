@@ -37,6 +37,8 @@ keystore.properties
 /ios/Pods/
 /ios/build/
 /ios-native/HongguoPad.xcodeproj/
+/ios-native/Vendor/
+/ios-native/mpv-dependencies.yml
 /ios-native/Resources/signer.js
 /ios-native/Resources/Assets.xcassets/
 /ios-native/Resources/*.txt

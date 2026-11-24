@@ -34,7 +34,7 @@ final class CoreTests: XCTestCase {
         let model = PlayerModel(detail: detail,index: 0,position: 0,library: library,defaults: defaults)
         XCTAssertEqual(model.rate,1)
         model.setRate(1.75)
-        XCTAssertEqual(model.player.rate,0,"Changing speed must preserve pause")
+        XCTAssertTrue(model.paused,"Changing speed must preserve pause")
         model.setRate(.nan); model.setRate(0); model.setRate(5)
         XCTAssertEqual(model.rate,1.75)
         let reopened = PlayerModel(detail: detail,index: 0,position: 0,library: library,defaults: defaults)
