@@ -114,16 +114,19 @@ final class LivePlaybackTests: XCTestCase {
             item.add(output)
             model.setRate(3)
             let warmup = ProcessInfo.processInfo.systemUptime + 15
-            while model.player.timeControlStatus != .playing && ProcessInfo.processInfo.systemUptime < warmup {
+            while (model.loading || model.player.timeControlStatus != .playing) && ProcessInfo.processInfo.systemUptime < warmup {
                 try await Task.sleep(nanoseconds: 100_000_000)
             }
             var frames = 0
+            let mediaStart = model.player.currentTime().seconds
             for _ in 0..<90 {
                 let time = output.itemTime(forHostTime: CACurrentMediaTime())
                 if output.hasNewPixelBuffer(forItemTime: time), output.copyPixelBuffer(forItemTime: time,itemTimeForDisplay: nil) != nil { frames += 1 }
                 try await Task.sleep(nanoseconds: 33_000_000)
             }
             XCTAssertGreaterThan(frames,15,"Decoded video frames, not just an advancing clock")
+            XCTAssertGreaterThan(model.player.currentTime().seconds - mediaStart,6)
+            XCTAssertEqual(item.audioTimePitchAlgorithm,.spectral)
             XCTAssertFalse(model.player.isMuted)
             XCTAssertGreaterThan(model.player.volume,0)
             XCTAssertTrue(item.tracks.contains { $0.isEnabled && $0.assetTrack?.mediaType == .audio })

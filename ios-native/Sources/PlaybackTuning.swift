@@ -8,9 +8,9 @@ enum PlaybackTuning {
         item.preferredForwardBufferDuration = 8 * Double(max(1,min(4,rate)))
     }
     static func configure(_ item: AVPlayerItem,rate: Float) {
-        // Configure once before attaching the item. Do not reset the audio
-        // processing pipeline each time the user selects a speed.
-        item.audioTimePitchAlgorithm = .spectral
+        // AVFoundation may normalize this when attaching/preparing an item.
+        // Restore it at controlled startup/rate transitions, only if changed.
+        if item.audioTimePitchAlgorithm != .spectral { item.audioTimePitchAlgorithm = .spectral }
         apply(item,rate: rate)
     }
 }

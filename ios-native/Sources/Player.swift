@@ -15,6 +15,8 @@ import AVKit
     @Published var sleepMinutes = 0
     private var sleepTask: Task<Void,Never>?
     private var loadTask: Task<Void,Never>?
+    private var speedTask: Task<Void,Never>?
+    private var speedGeneration = UUID()
     private let audioOwner = UUID()
     private var active = false
     private let resolve: (String) async throws -> [Rendition]
@@ -59,7 +61,8 @@ import AVKit
     func load(_ newIndex: Int,position: Double = 0) {
         guard detail.episodes.indices.contains(newIndex) else { return }
         save(); currentEpisode = nil; player.pause()
-        loadTask?.cancel(); player.cancelPendingPrerolls(); resource?.cancel(); resource = nil
+        loadTask?.cancel(); speedTask?.cancel(); speedTask = nil; speedGeneration = UUID()
+        player.cancelPendingPrerolls(); resource?.cancel(); resource = nil
         statusObserver = nil
         if let endObserver = endObserver { NotificationCenter.default.removeObserver(endObserver); self.endObserver = nil }
         player.replaceCurrentItem(with: nil)
@@ -104,6 +107,7 @@ import AVKit
                     try await Task.sleep(nanoseconds: 50_000_000)
                 }
                 guard item.status == .readyToPlay else { throw item.error ?? HGError.message("播放器准备失败") }
+                PlaybackTuning.configure(item,rate: rate)
                 if position > 0 { await player.seek(to: CMTime(seconds: position,preferredTimescale: 600)) }
                 try Task.checkCancellation()
                 guard generation == id,active else { return }
@@ -121,6 +125,7 @@ import AVKit
                 loading = false
                 player.automaticallyWaitsToMinimizeStalling = true
                 player.rate = rate
+                PlaybackTuning.configure(item,rate: rate)
             } catch is CancellationError { }
             catch { if generation == id { self.error = PlaybackFailure.describe(error) + "\niOS \(UIDevice.current.systemVersion) · build 10"; loading = false } }
         }
@@ -139,11 +144,40 @@ import AVKit
     func setQuality(_ value: Int) { quality = value; load(index,position: max(0,player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0)) }
     func setRate(_ value: Float) {
         guard PlaybackSpeed.valid(value) else { return }
+        let previous = rate
+        let resume = player.rate > 0 || speedTask != nil
         rate = (value * 100).rounded() / 100
         defaults.set(rate,forKey: PlaybackSpeed.key)
         if let item = player.currentItem { PlaybackTuning.apply(item,rate: rate) }
         if #available(iOS 16.0, *) { player.defaultRate = rate }
-        if player.rate > 0 { player.rate = rate }
+        guard !loading || speedTask != nil else { return }
+        guard let item = player.currentItem,item.status == .readyToPlay else { return }
+        if resume && previous != rate && (previous > 2 || rate > 2) {
+            // Re-prime the decoder at the current position when entering or
+            // leaving fast-forward, rather than retaining an I-frame-only path.
+            speedTask?.cancel(); player.cancelPendingPrerolls()
+            speedGeneration = UUID(); let token = speedGeneration, episode = generation
+            let position = player.currentTime()
+            player.pause(); loading = true
+            speedTask = Task {
+                defer {
+                    if speedGeneration == token { speedTask = nil; loading = false }
+                }
+                _ = await player.seek(to: position,toleranceBefore: .zero,toleranceAfter: .zero)
+                guard !Task.isCancelled,active,generation == episode,speedGeneration == token else { return }
+                PlaybackTuning.configure(item,rate: rate)
+                let ready = await withCheckedContinuation { continuation in
+                    player.preroll(atRate: rate) { continuation.resume(returning: $0) }
+                }
+                guard !Task.isCancelled,active,generation == episode,speedGeneration == token else { return }
+                guard ready else { error = "倍速音视频预缓冲失败，请重试"; return }
+                player.rate = rate
+                PlaybackTuning.configure(item,rate: rate)
+            }
+        } else if resume {
+            player.rate = rate
+            PlaybackTuning.configure(item,rate: rate)
+        }
     }
     func setSleep(_ minutes: Int) {
         sleepTask?.cancel(); sleepMinutes = minutes
@@ -155,7 +189,8 @@ import AVKit
     }
     func stop() {
         save(); active = false; generation = UUID(); loading = false
-        loadTask?.cancel(); sleepTask?.cancel(); player.cancelPendingPrerolls(); player.pause(); resource?.cancel()
+        loadTask?.cancel(); speedTask?.cancel(); speedTask = nil; speedGeneration = UUID()
+        sleepTask?.cancel(); player.cancelPendingPrerolls(); player.pause(); resource?.cancel()
         statusObserver = nil
         if let timeObserver = timeObserver { player.removeTimeObserver(timeObserver); self.timeObserver = nil }
         if let endObserver = endObserver { NotificationCenter.default.removeObserver(endObserver); self.endObserver = nil }
