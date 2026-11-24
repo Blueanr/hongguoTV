@@ -53,16 +53,16 @@ const identity=JSON.parse(registrationText.replace(/("(?:device_id|install_id)"\
 const device=String(identity.device_id_str||identity.device_id),install=String(identity.install_id_str||identity.install_id);
 if(!/^[1-9]\d+$/.test(device)||!/^[1-9]\d+$/.test(install))throw new Error('Device registration rejected');
 console.log('Anonymous registration OK');
-const values={aid:'8662',app_name:'novelread',version_code:'74332',version_name:'7.4.3.32',channel:'vivo_8662_64',device_platform:'android',device_type:'PGT-AN10',os_version:'12',update_version_code:'74332',iid:install,cdid:header.cdid,device_id:device};
+const values={aid:'8662',app_name:'novelread',version_code:'74532',version_name:'7.4.5.32',update_version_code:'74532',manifest_version_code:'74532',os:'android',ssmix:'a',channel:'update_64',device_platform:'android',device_type:'25053RT47C',device_brand:'Redmi',os_version:'16',os_api:'36',ac:'wifi',language:'zh',host_abi:'arm64-v8a',iid:install,cdid:header.cdid,device_id:device};
 async function modelRequest(id,tab,host) {
   const extra={video_id:id,video_id_type:'0',device_level:'1',need_all_video_definition:'1',need_mp4_align:'0',use_os_player:'0',video_platform:'1024',source:'0',from_video_id:''};
-  const data=tab?null:zlib.gzipSync(Buffer.from(JSON.stringify({biz_param:{detail_page_version:0,device_level:1,disable_digg_stat:false,disable_video_relate_book:false,need_all_video_definition:true,need_mp4_align:false,use_os_player:false,use_server_dns:false,video_platform:1024},mixed_video_id_map:{1004:[id]},dr_scene:'player'})));
-  const signed=JSON.parse(context.hgSignV5('https://'+host+(tab?'/reading/bookapi/video_tab/multi_video_model/v1/':'/novel/player/multi_video_model/player/v1'),tab?{...values,...extra}:values,data?.toString('base64')??''));
-  const headers={...signed.headers,Accept:tab?'application/json; charset=utf-8':'application/json','User-Agent':tab?'com.phoenix.read/73932 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)':'com.phoenix.read/73932 (Linux; U; Android 12; zh_CN_#Hans; PGT-AN10; Build/V417IR;tt-ok/3.12.13.20)'};
+   const data=tab?null:zlib.gzipSync(Buffer.from(JSON.stringify({biz_param:{detail_page_version:0,device_level:2,disable_digg_stat:false,disable_video_relate_book:false,need_all_video_definition:true,need_mp4_align:false,use_os_player:false,use_server_dns:false,video_platform:1024},mixed_video_id_map:{1004:[id]},dr_scene:'preload'})));
+   const signed=JSON.parse(context.hgSignV5('https://'+host+(tab?'/reading/bookapi/video_tab/multi_video_model/v1/':'/novel/player/multi_video_model/preload/v1'),tab?{...values,...extra}:values,data?.toString('base64')??''));
+   const headers={...signed.headers,Accept:tab?'application/json; charset=utf-8':'application/json','User-Agent':tab?'com.phoenix.read/73932 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)':'okhttp/4.12.0'};
   if(tab){for(const key of ['Content-Type','Content-Encoding','x-ss-stub'])delete headers[key];headers['Accept-Language']='zh-CN,zh;q=0.9';}else headers['Content-Encoding']='gzip';
   const reply=await request(signed.url,{method:tab?'GET':'POST',body:data,headers});
   const text=await reply.text();
-  console.log(tab?'V5 GET':'V5 POST',host.includes('sinfonlinea')?'primary':'alternate','bytes:',Buffer.byteLength(text));
+   console.log(tab?'V5 GET':'V5 POST',host,'HTTP:',reply.status,'bytes:',Buffer.byteLength(text));
   if(!text.trim()){if(reply.headers.has('Retry-After'))throw new Error('Service backoff');return null;}
   const root=JSON.parse(text);if((root.code||root.Code||0)!==0)throw new Error('Model rejected');
   const entries=tab?(root.data?.video_model_data||root.data):(root.data?.['1004']||root.data);
@@ -72,7 +72,7 @@ async function modelRequest(id,tab,host) {
 }
 const compatible=model=>(Array.isArray(model.video_list)?model.video_list:Object.values(model.video_list||{})).filter(r=>!/bytevc2|bvc2/i.test([r.codec_type,r.gear_des_key,r.video_meta?.codec_type].join(' ')));
 for(const id of [...new Set([episode,String(detail.vid_list[Math.min(53,detail.vid_list.length-1)]),String(detail.vid_list.at(-1))])]){
-  let model=await modelRequest(id,false,'api5-normal-sinfonlinea.fqnovel.com');
+  let model=await modelRequest(id,false,'reading.snssdk.com');
   if(!model){model=await modelRequest(id,true,'api5-normal-sinfonlineb.fqnovel.com');if(model&&!compatible(model).length)model=await modelRequest(id,false,'api5-normal-sinfonlineb.fqnovel.com');}
   if(!model)throw new Error('Playback routes empty');
   const list=compatible(model);if(!list.length)throw new Error('No compatible renditions');

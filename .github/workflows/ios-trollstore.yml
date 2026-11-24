@@ -38,6 +38,14 @@ jobs:
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Build device IPA
         run: bash scripts/build-ios.sh
+      - name: Cross-runtime live source diagnostic
+        if: ${{ inputs.live_playback }}
+        run: |
+          if node ios-native/tooling/probe.mjs; then
+            echo 'Node source diagnostic passed; Swift end-to-end playback remains required.'
+          else
+            echo 'Node source diagnostic failed; continuing to the required Swift playback tests.'
+          fi
       - name: Simulator tests
         timeout-minutes: 12
         env:
