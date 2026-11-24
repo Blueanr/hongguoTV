@@ -31,7 +31,8 @@ jobs:
           cache-dependency-path: ios-native/tooling/package-lock.json
       - name: Install build tools
         run: |
-          brew install xcodegen
+          brew install xcodegen ffmpeg
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'testsrc2=size=640x360:rate=30' -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 90 -c:v libx264 -preset ultrafast -crf 30 -pix_fmt yuv420p -c:a aac -b:a 96k -movflags +faststart ios-native/Tests/mpv-regression.mp4
           python3 -m venv .venv
           .venv/bin/pip install Pillow==11.3.0
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"

@@ -45,3 +45,4 @@ keystore.properties
 *.ipa
 *.xcarchive/
 *.xcresult/
+ios-native/Tests/mpv-regression.mp4

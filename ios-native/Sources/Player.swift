@@ -23,6 +23,7 @@ import AVFoundation
     private let audioOwner = UUID()
     private var active = false
     private let resolve: (String) async throws -> [Rendition]
+    private let makeBytes: (Rendition) -> MediaBytes
     private let defaults: UserDefaults
     private var generation = UUID()
     private var currentEpisode: Int?
@@ -34,9 +35,10 @@ import AVFoundation
     private var routeObserver: NSObjectProtocol?
     private var resumeAfterInterruption = false
     init(detail: Detail,index: Int,position: Double,library: Library,defaults: UserDefaults = .standard,
-         resolve: @escaping (String) async throws -> [Rendition] = { try await Repository.shared.streams($0) }) {
+         resolve: @escaping (String) async throws -> [Rendition] = { try await Repository.shared.streams($0) },
+         makeBytes: @escaping (Rendition) -> MediaBytes = { MediaBytes($0) }) {
         self.detail = detail; self.index = index; self.initialPosition = position; self.library = library
-        self.defaults = defaults; self.resolve = resolve
+        self.defaults = defaults; self.resolve = resolve; self.makeBytes = makeBytes
         let saved = defaults.float(forKey: PlaybackSpeed.key)
         rate = PlaybackSpeed.valid(saved) ? saved : 1
     }
@@ -79,7 +81,7 @@ import AVFoundation
                 guard generation == id,active else { return }
                 qualities = Array(Set(streams.map(\.quality).filter { $0 > 0 })).sorted(by: >)
                 guard let selected = streams.first(where: { $0.quality <= quality && $0.quality > 0 }) ?? streams.last else { throw HGError.message("没有兼容的播放资源") }
-                let bytes = MediaBytes(selected)
+                let bytes = makeBytes(selected)
                 let (_,length) = try await bytes.prepare()
                 try Task.checkCancellation()
                 guard generation == id,active else { return }

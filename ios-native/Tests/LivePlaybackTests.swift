@@ -7,6 +7,21 @@ import CoreVideo
 
 // Explicit opt-in: real anonymous registration and network requests, no account.
 final class LivePlaybackTests: XCTestCase {
+    @MainActor func testOfflineMPVReentryWithGeneratedAudioVideo() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "mpv-regression",withExtension: "mp4"),"Generate the deterministic audio/video fixture before XcodeGen")
+        let data = try Data(contentsOf: url)
+        let row = Rendition(url: URL(string: "https://fixture.invalid/mpv.mp4")!,key: nil,quality: 720,codec: "h264 fixture")
+        try await verifyReentry(row,makeBytes: { rendition in
+            MediaBytes(rendition,fetch: { request,_ in
+                let range = try XCTUnwrap(request.value(forHTTPHeaderField: "Range"))
+                let parts = range.replacingOccurrences(of: "bytes=",with: "").split(separator: "-")
+                guard parts.count == 2,let start = Int(parts[0]),let end = Int(parts[1]),
+                      start >= 0,end >= start,end < data.count else { throw HGError.message("Invalid fixture range") }
+                let response = try XCTUnwrap(HTTPURLResponse(url: rendition.url,statusCode: 206,httpVersion: nil,headerFields: ["Content-Range":"bytes \(start)-\(end)/\(data.count)"]))
+                return (data.subdata(in: start..<(end + 1)),response)
+            })
+        })
+    }
     func testProductionUpstreamPlaybackModels() async throws {
         guard ProcessInfo.processInfo.environment["HONGGUO_LIVE_PLAYBACK"] == "1" else {
             throw XCTSkip("Set HONGGUO_LIVE_PLAYBACK=1 for real-network playback checks")
@@ -111,13 +126,13 @@ final class LivePlaybackTests: XCTestCase {
         }
         XCTFail("AVPlayer did not advance within 45 seconds; status \(item.status.rawValue)")
     }
-    @MainActor private func verifyReentry(_ row: Rendition) async throws {
+    @MainActor private func verifyReentry(_ row: Rendition,makeBytes: @escaping (Rendition) -> MediaBytes = { MediaBytes($0) }) async throws {
         let suite = "PlaybackReentry.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let detail = Detail(series: Series(id: "1",title: "Reentry"),episodes: ["123456789"])
         for pass in 0..<2 {
-            let model = PlayerModel(detail: detail,index: 0,position: 0,library: Library(),defaults: defaults,resolve: { _ in [row] })
+            let model = PlayerModel(detail: detail,index: 0,position: 0,library: Library(),defaults: defaults,resolve: { _ in [row] },makeBytes: makeBytes)
             defer { model.stop() }
             if pass == 1 { XCTAssertEqual(model.rate,3,"Restore speed on fresh player") }
             // Exercise the actual libmpv render API in a visible UIView. Simulator
@@ -155,7 +170,7 @@ final class LivePlaybackTests: XCTestCase {
                 try await Task.sleep(nanoseconds: 33_000_000)
             }
             let frames = ((model.playbackState["frames"] as? NSNumber)?.intValue ?? 0) - firstFrames
-            XCTAssertGreaterThan(frames,15,"Decoded video frames, not just an advancing clock")
+            XCTAssertGreaterThan(frames,15,"Render updates must accompany the advancing clock; updates may include repeated frames")
             XCTAssertGreaterThan(model.position - mediaStart,6)
             XCTAssertEqual(model.playbackState["pitchCorrection"] as? Bool,true)
             XCTAssertFalse((model.playbackState["audio"] as? String ?? "").isEmpty)

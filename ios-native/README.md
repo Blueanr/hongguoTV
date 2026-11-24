@@ -34,6 +34,8 @@ build 11 模拟器音频限制：固定 v0.39.0 框架的两个 simulator slice 
 
 跨页面／换集时由 `MPVLifetime` 等待旧实例 render context 释放及 `mpv_terminate_destroy` 完成后，再激活新播放器音频会话并创建实例。原因是 mpv 内部 AudioUnit 销毁会停用全局 AVAudioSession，只有 Swift 层 owner 标记不足以隔离这种异步销毁。重复 shutdown 通过完成回调保持幂等。
 
+内核回归还包含独立的离线音视频：CI 用 FFmpeg `testsrc2` 和 440 Hz 正弦波生成 90 秒 H.264/AAC faststart MP4，作为测试 bundle 资源，通过内存 Range 传输注入同一 `MediaBytes` / `PlayerModel` 路线，复用首次及重进倍速、PCM、暂停和 seek 断言。此检查不依赖上游可用性，也不代表真实取源或 CENC 联网播放通过；真实联网测试仍是单独的必过项目。手动运行 Xcode 测试前，先执行 workflow 中的 FFmpeg 生成命令，再运行 XcodeGen。
+
 build 10 音视频重进修复尝试：用户反馈首次 3× 画面卡但有声，重进同集 3× 画面正常却无声。播放器现在等待 readyToPlay、恢复位置并按目标速度 preroll 后启动；退出使旧任务失效，新旧播放器使用音频会话所有者保护，避免迟到的旧页面退出停用新音频会话。音频变速使用 spectral 并仅在创建 item 时设置，切倍速只调整缓冲与 rate。保留 build 9 批量下载和缓存。联网测试增加实际 PlayerModel 的首次 1×→3×、退出重建恢复3×、视频像素帧输出和音轨启用检查；这些检查不能代替 iOS15.0.2 实机扬声器及流畅度验收。
 
 build 10 首轮 Actions `45361717667` 未通过新增验收：首次 3× 仅取到 1/90 帧，重进 86/90 帧；启动后算法读回 TimeDomain。修订版在媒体 ready 和启播后校正算法（仅值变化时设置），进入／离开 >2× 时暂停、原位 seek 和目标速率 preroll 再继续，测试同时检查实际帧和播放时间推进。首轮 IPA 不作为已通过版本交付。
