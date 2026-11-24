@@ -143,12 +143,12 @@ static void updateRender(void *ctx) { [(__bridge HGMPVPlayer *)ctx markFrame]; }
     result = mpv_render_context_create(&_renderer,_mpv,params);
 #else
     _gl = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2];
-    if (!_gl || ![EAGLContext setCurrent:_gl]) { [self rendererFailed:@"OpenGL ES 初始化失败"]; return; }
+    if (!_gl || ![EAGLContext setCurrentContext:_gl]) { [self rendererFailed:@"OpenGL ES 初始化失败"]; return; }
     mpv_opengl_init_params glInit = {.get_proc_address=getGL};
     mpv_render_param params[] = {{MPV_RENDER_PARAM_API_TYPE,MPV_RENDER_API_TYPE_OPENGL},
         {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS,&glInit},{0}};
     result = mpv_render_context_create(&_renderer,_mpv,params);
-    [EAGLContext setCurrent:nil];
+    [EAGLContext setCurrentContext:nil];
 #endif
     if (result < 0) { [self rendererFailed:[NSString stringWithUTF8String:mpv_error_string(result)]]; return; }
     mpv_render_context_set_update_callback(_renderer,updateRender,(__bridge void *)self);
@@ -178,13 +178,13 @@ static void updateRender(void *ctx) { [(__bridge HGMPVPlayer *)ctx markFrame]; }
 - (void)drawFrame {
     if (!_renderer || atomic_load(&_stopping)) return;
 #if !TARGET_OS_SIMULATOR
-    [EAGLContext setCurrent:_gl];
+    [EAGLContext setCurrentContext:_gl];
 #endif
     BOOL changed = atomic_exchange(&_needsFrame,false);
     uint64_t flags = changed ? mpv_render_context_update(_renderer) : 0;
     if (!(flags & MPV_RENDER_UPDATE_FRAME) && !_resize) {
 #if !TARGET_OS_SIMULATOR
-        [EAGLContext setCurrent:nil];
+        [EAGLContext setCurrentContext:nil];
 #endif
         return;
     }
@@ -218,7 +218,7 @@ static void updateRender(void *ctx) { [(__bridge HGMPVPlayer *)ctx markFrame]; }
     }
     glBindFramebuffer(GL_FRAMEBUFFER,_fbo);
     if (_width < 1 || _height < 1 || glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        [EAGLContext setCurrent:nil]; return;
+        [EAGLContext setCurrentContext:nil]; return;
     }
     mpv_opengl_fbo fbo = {.fbo=(int)_fbo,.w=_width,.h=_height}; int flip = 1;
     mpv_render_param params[] = {{MPV_RENDER_PARAM_OPENGL_FBO,&fbo},{MPV_RENDER_PARAM_FLIP_Y,&flip},{0}};
@@ -232,7 +232,7 @@ static void updateRender(void *ctx) { [(__bridge HGMPVPlayer *)ctx markFrame]; }
         mpv_render_context_report_swap(_renderer);
     }
 #if !TARGET_OS_SIMULATOR
-    [EAGLContext setCurrent:nil];
+    [EAGLContext setCurrentContext:nil];
 #endif
 }
 - (double)number:(const char *)name {
@@ -315,7 +315,7 @@ static void updateRender(void *ctx) { [(__bridge HGMPVPlayer *)ctx markFrame]; }
         if (self->_timer) { dispatch_source_cancel(self->_timer); self->_timer = nil; }
         dispatch_async(self->_renderQueue,^{
 #if !TARGET_OS_SIMULATOR
-            [EAGLContext setCurrent:self->_gl];
+            [EAGLContext setCurrentContext:self->_gl];
 #endif
             if (self->_renderer) {
                 mpv_render_context_set_update_callback(self->_renderer,NULL,NULL);
@@ -324,7 +324,7 @@ static void updateRender(void *ctx) { [(__bridge HGMPVPlayer *)ctx markFrame]; }
 #if !TARGET_OS_SIMULATOR
             if (self->_fbo) glDeleteFramebuffers(1,&self->_fbo);
             if (self->_rbo) glDeleteRenderbuffers(1,&self->_rbo);
-            [EAGLContext setCurrent:nil]; self->_gl = nil;
+            [EAGLContext setCurrentContext:nil]; self->_gl = nil;
 #endif
             dispatch_async(self->_controlQueue,^{ if (self->_mpv) { mpv_terminate_destroy(self->_mpv); self->_mpv = NULL; } });
         });
