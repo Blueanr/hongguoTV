@@ -17,7 +17,7 @@ final class LivePlaybackTests: XCTestCase {
         let detail = try await repository.detail(series.id)
         let indices = Set([0,min(53,detail.episodes.count - 1),detail.episodes.count - 1]).sorted()
         for index in indices {
-            let rows = try await repository.streams(detail.episodes[index])
+            let rows = try await liveStreams(repository,episode: detail.episodes[index],index: index)
             XCTAssertFalse(rows.isEmpty)
             let row = try XCTUnwrap(rows.first)
             var request = URLRequest(url: row.url)
@@ -34,6 +34,27 @@ final class LivePlaybackTests: XCTestCase {
                 try await verifyReentry(selected)
             }
         }
+    }
+    private func liveStreams(_ repository: Repository,episode: String,index: Int) async throws -> [Rendition] {
+        // The live endpoint can return empty bodies on both production hosts.
+        // Retry only that explicit transient response, retaining the same device
+        // and episode; never retry a decoding, renderer, or playback assertion.
+        for attempt in 1...3 {
+            do {
+                let rows = try await repository.streams(episode)
+                print("Live source index \(index): attempt \(attempt)/3 succeeded")
+                return rows
+            } catch {
+                try Task.checkCancellation()
+                guard let failure = error as? PlaybackFailure,
+                      let cause = failure.cause as? HGError,
+                      case .message(let message) = cause,
+                      message == "播放接口暂时返回空响应，请稍后重试",
+                      attempt < 3 else { throw error }
+                print("Live source index \(index): attempt \(attempt)/3 returned an empty response; retrying")
+            }
+        }
+        throw HGError.message("联网验收取源尝试耗尽")
     }
     @MainActor private func verifyPlayer(_ row: Rendition) async throws {
         let resource = MediaResource(row)
