@@ -139,6 +139,16 @@ final class LivePlaybackTests: XCTestCase {
             XCTAssertEqual(model.playbackState["pitchCorrection"] as? Bool,true)
             XCTAssertFalse((model.playbackState["audio"] as? String ?? "").isEmpty)
             XCTAssertFalse((model.playbackState["audioOutput"] as? String ?? "").isEmpty)
+#if targetEnvironment(simulator)
+            XCTAssertEqual(model.playbackState["audioOutput"] as? String,"pcm")
+            let pcmPath = try XCTUnwrap(model.playbackState["pcmPath"] as? String)
+            let pcm = try Data(contentsOf: URL(fileURLWithPath: pcmPath))
+            XCTAssertGreaterThan(pcm.count,4096,"Actual audio samples must reach the PCM output")
+            XCTAssertTrue(pcm.contains { $0 != 0 },"Decoded audio must not be entirely silent")
+            print("Simulator PCM capture: \(pcm.count) bytes with nonzero samples; no system audio backend in pinned simulator binary")
+#else
+            XCTAssertEqual(model.playbackState["audioOutput"] as? String,"audiounit")
+#endif
             XCTAssertNil(model.error)
             print("libmpv 3x reentry pass \(pass + 1): \(frames) rendered frames, state \(model.playbackState); device speaker output requires validation")
             model.setPaused(true); model.setRate(4)

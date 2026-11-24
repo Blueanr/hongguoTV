@@ -62,6 +62,7 @@ static void *getGL(void *ctx,const char *name) { return dlsym(RTLD_DEFAULT,name)
     double _startPosition,_speed;
     NSString *_failure;
     NSMutableArray<NSString *> *_audioLog;
+    NSString *_pcmPath;
     BOOL _loaded,_ended;
 }
 @end
@@ -129,6 +130,15 @@ static void *getGL(void *ctx,const char *name) { return dlsym(RTLD_DEFAULT,name)
         for (NSUInteger i=0;i<sizeof(options)/sizeof(options[0]);i++) {
             if (![self option:options[i][0] value:options[i][1]]) return;
         }
+#if TARGET_OS_SIMULATOR
+        // The pinned simulator slices were built with every system AO disabled.
+        // Capture real decoded/time-stretched PCM, never claim speaker output.
+        self->_pcmPath = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"hongguo-%@.pcm",NSUUID.UUID.UUIDString]];
+        if (![self option:"ao" value:"pcm"] ||
+            ![self option:"ao-pcm-file" value:self->_pcmPath.UTF8String] ||
+            ![self option:"ao-pcm-waveheader" value:"no"] ||
+            ![self option:"audio-format" value:"s16"]) return;
+#endif
         int result = mpv_initialize(self->_mpv);
         if (result < 0) { [self fail:[NSString stringWithUTF8String:mpv_error_string(result)]]; return; }
         // Keep audio-backend diagnostics without logging media URLs or keys.
@@ -263,6 +273,7 @@ static void updateRender(void *ctx) { [(__bridge HGMPVPlayer *)ctx markFrame]; }
         state[@"audioOutput"] = [self text:"current-ao"]; state[@"video"] = [self text:"video-codec"];
     }
     state[@"loaded"] = @(_loaded); state[@"ended"] = @(_ended);
+    if (_pcmPath) state[@"pcmPath"] = _pcmPath;
     state[@"frames"] = @(atomic_load(&_frames));
     if (_failure) state[@"error"] = _failure;
     dispatch_async(dispatch_get_main_queue(),^{ if (!atomic_load(&self->_stopping) && self.onUpdate) self.onUpdate(state); });
@@ -344,7 +355,10 @@ static void updateRender(void *ctx) { [(__bridge HGMPVPlayer *)ctx markFrame]; }
             if (self->_rbo) glDeleteRenderbuffers(1,&self->_rbo);
             [EAGLContext setCurrentContext:nil]; self->_gl = nil;
 #endif
-            dispatch_async(self->_controlQueue,^{ if (self->_mpv) { mpv_terminate_destroy(self->_mpv); self->_mpv = NULL; } });
+            dispatch_async(self->_controlQueue,^{
+                if (self->_mpv) { mpv_terminate_destroy(self->_mpv); self->_mpv = NULL; }
+                if (self->_pcmPath) [[NSFileManager defaultManager] removeItemAtPath:self->_pcmPath error:nil];
+            });
         });
     });
 }

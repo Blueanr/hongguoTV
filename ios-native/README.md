@@ -30,6 +30,8 @@
 
 build 11：按用户 M1 iPad Pro 11 英寸第三代的反馈，正式播放器改为原生 libmpv 0.39.0。使用 PiliPlus 同源固定版本框架、speed/audio-pitch-correction、hwdec=auto、display-resample；本机 MediaBytes 通过可取消自定义流接入 mpv，真机 OpenGL ES 渲染、模拟器有界软件渲染。保留自定义倍速、暂停、拖动、清晰度、选集、历史、自动下一集、定时停止；添加全屏按钮与硬解/丢帧/A-V 诊断。系统 AVPlayerViewController 已替换，当前未接入 mpv 画中画，应用转入后台暂停。验收须区分模拟器功能测试和 iPad 真机持续 3× 音画测试。
 
+build 11 模拟器音频限制：固定 v0.39.0 框架的两个 simulator slice 构建配置均为 `-Daudiounit=disabled -Dcoreaudio=disabled`，其他系统 AO 也关闭；设备 slice 为 `-Daudiounit=enabled`。Actions `45382327579` 的音频初始化失败来自模拟器缺失系统输出后端。模拟器改用 mpv PCM 输出并检查实际解码/变速后的非零样本；真机保留正常系统输出。PCM 测试不代表扬声器有声，也不能验证真机 AudioUnit 生命周期。
+
 build 10 音视频重进修复尝试：用户反馈首次 3× 画面卡但有声，重进同集 3× 画面正常却无声。播放器现在等待 readyToPlay、恢复位置并按目标速度 preroll 后启动；退出使旧任务失效，新旧播放器使用音频会话所有者保护，避免迟到的旧页面退出停用新音频会话。音频变速使用 spectral 并仅在创建 item 时设置，切倍速只调整缓冲与 rate。保留 build 9 批量下载和缓存。联网测试增加实际 PlayerModel 的首次 1×→3×、退出重建恢复3×、视频像素帧输出和音轨启用检查；这些检查不能代替 iOS15.0.2 实机扬声器及流畅度验收。
 
 build 10 首轮 Actions `45361717667` 未通过新增验收：首次 3× 仅取到 1/90 帧，重进 86/90 帧；启动后算法读回 TimeDomain。修订版在媒体 ready 和启播后校正算法（仅值变化时设置），进入／离开 >2× 时暂停、原位 seek 和目标速率 preroll 再继续，测试同时检查实际帧和播放时间推进。首轮 IPA 不作为已通过版本交付。
