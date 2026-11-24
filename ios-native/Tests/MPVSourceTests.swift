@@ -3,6 +3,21 @@ import XCTest
 @testable import HongguoPad
 
 final class MPVSourceTests: XCTestCase {
+    @MainActor func testRetirementCompletesBeforeNewAudioOwnerStarts() async throws {
+        let row = Rendition(url: URL(string: "https://example.org/video.mp4")!,key: nil,quality: 720,codec: "h264")
+        let player = HGMPVPlayer(source: MPVMediaSource(bytes: MediaBytes(row),length: 1024))
+        let old = UUID(),new = UUID()
+        try PlaybackAudioSession.activate(old)
+        MPVLifetime.retire(player,releaseAudio: old)
+        await MPVLifetime.waitForRetirement()
+        XCTAssertFalse(PlaybackAudioSession.isOwner(old))
+        try PlaybackAudioSession.activate(new)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void,Never>) in
+            player.shutdown { continuation.resume() }
+        }
+        XCTAssertTrue(PlaybackAudioSession.isOwner(new),"Repeated old-player shutdown cannot close the new session")
+        PlaybackAudioSession.release(new)
+    }
     func testCancelledSourceWakesBlockedDemuxReader() async throws {
         let started = expectation(description: "Range request started")
         let row = Rendition(url: URL(string: "https://example.org/video.mp4")!,key: nil,quality: 720,codec: "h264")

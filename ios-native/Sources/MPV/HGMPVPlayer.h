@@ -17,5 +17,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setPaused:(BOOL)paused;
 - (void)seekTo:(double)position NS_SWIFT_NAME(seek(to:));
 - (void)shutdown;
+- (void)shutdownWithCompletion:(void (^)(void))completion NS_SWIFT_NAME(shutdown(completion:));
 @end
 NS_ASSUME_NONNULL_END

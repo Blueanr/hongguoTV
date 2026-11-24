@@ -68,7 +68,7 @@ import AVFoundation
     func load(_ newIndex: Int,position start: Double = 0,autoplay: Bool = true) {
         guard active,detail.episodes.indices.contains(newIndex) else { return }
         save(); currentEpisode = nil
-        loadTask?.cancel(); player?.shutdown(); player = nil
+        loadTask?.cancel(); MPVLifetime.retire(player); player = nil
         generation = UUID(); let id = generation
         index = newIndex; error = nil; loading = true; paused = !autoplay
         position = max(0,start); duration = 0; playbackState = [:]
@@ -83,6 +83,10 @@ import AVFoundation
                 let (_,length) = try await bytes.prepare()
                 try Task.checkCancellation()
                 guard generation == id,active else { return }
+                await MPVLifetime.waitForRetirement()
+                try Task.checkCancellation()
+                guard generation == id,active else { return }
+                try PlaybackAudioSession.activate(audioOwner)
                 let source = MPVMediaSource(bytes: bytes,length: length)
                 let engine = HGMPVPlayer(source: source)
                 currentEpisode = newIndex
@@ -160,10 +164,10 @@ import AVFoundation
     }
     func stop() {
         save(); active = false; generation = UUID(); loading = false
-        loadTask?.cancel(); sleepTask?.cancel(); player?.shutdown(); player = nil; paused = true
+        loadTask?.cancel(); sleepTask?.cancel()
+        MPVLifetime.retire(player,releaseAudio: audioOwner); player = nil; paused = true
         for observer in [interruptionObserver,routeObserver].compactMap({ $0 }) { NotificationCenter.default.removeObserver(observer) }
         interruptionObserver = nil; routeObserver = nil; currentEpisode = nil
-        PlaybackAudioSession.release(audioOwner)
     }
 }
 

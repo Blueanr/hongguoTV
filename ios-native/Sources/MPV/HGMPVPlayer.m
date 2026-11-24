@@ -63,6 +63,8 @@ static void *getGL(void *ctx,const char *name) { return dlsym(RTLD_DEFAULT,name)
     NSString *_failure;
     NSMutableArray<NSString *> *_audioLog;
     NSString *_pcmPath;
+    NSMutableArray<void (^)(void)> *_shutdownCallbacks;
+    BOOL _destroyed;
     BOOL _loaded,_ended;
 }
 @end
@@ -84,6 +86,7 @@ static void *getGL(void *ctx,const char *name) { return dlsym(RTLD_DEFAULT,name)
 - (instancetype)initWithSource:(id<HGMPVSource>)source {
     if ((self = [super initWithFrame:CGRectZero])) {
         _source = source; _speed = 1; _audioLog = [NSMutableArray array];
+        _shutdownCallbacks = [NSMutableArray array];
         atomic_init(&_stopping,false); atomic_init(&_renderQueued,false);
         atomic_init(&_needsFrame,true); atomic_init(&_frames,0);
         _controlQueue = dispatch_queue_create("com.hongguotv.mpv.control",DISPATCH_QUEUE_SERIAL);
@@ -333,7 +336,11 @@ static void updateRender(void *ctx) { [(__bridge HGMPVPlayer *)ctx markFrame]; }
         if (result < 0) [self fail:[NSString stringWithUTF8String:mpv_error_string(result)]];
     });
 }
-- (void)shutdown {
+- (void)shutdown { [self shutdownWithCompletion:^{}]; }
+- (void)shutdownWithCompletion:(void (^)(void))completion {
+    NSAssert(NSThread.isMainThread,@"Player lifetime is managed on the main thread");
+    if (_destroyed) { completion(); return; }
+    [_shutdownCallbacks addObject:[completion copy]];
     if (_closed) return;
     _closed = YES; atomic_store(&_stopping,true);
     [_displayLink invalidate]; _displayLink = nil; self.onUpdate = nil;
@@ -358,6 +365,12 @@ static void updateRender(void *ctx) { [(__bridge HGMPVPlayer *)ctx markFrame]; }
             dispatch_async(self->_controlQueue,^{
                 if (self->_mpv) { mpv_terminate_destroy(self->_mpv); self->_mpv = NULL; }
                 if (self->_pcmPath) [[NSFileManager defaultManager] removeItemAtPath:self->_pcmPath error:nil];
+                dispatch_async(dispatch_get_main_queue(),^{
+                    self->_destroyed = YES;
+                    NSArray *callbacks = [self->_shutdownCallbacks copy];
+                    [self->_shutdownCallbacks removeAllObjects];
+                    for (void (^callback)(void) in callbacks) callback();
+                });
             });
         });
     });
